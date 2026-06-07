@@ -97,11 +97,11 @@
   },
   {
     "task": "Play Cricket",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "task": "Watch Movie",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "task": "Clean Workspace",

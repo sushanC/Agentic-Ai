@@ -149,6 +149,26 @@ async function saveTasks(tasks) {
   );
 }
 
+async function loadNotes() {
+  try {
+    const data = await fs.readFile(
+      "./notes.json",
+      "utf-8"
+    );
+
+    return JSON.parse(data);
+
+  } catch {
+    return [];
+  }
+}
+
+async function saveNotes(notes) {
+  await fs.writeFile(
+    "./notes.json",
+    JSON.stringify(notes, null, 2)
+  );
+}
 
 
 async function main() {
@@ -167,6 +187,364 @@ async function main() {
       console.log("👋 Goodbye!");
       break;
     }
+
+    if (
+  userMessage.toLowerCase() ===
+  "daily review"
+) {
+
+  const tasks = await loadTasks();
+  const notes = await loadNotes();
+
+  const completed = tasks.filter(
+    t => t.status === "completed"
+  );
+
+  const pending = tasks.filter(
+    t => t.status === "pending"
+  );
+
+  const prompt = `
+You are my productivity coach.
+
+Profile:
+${JSON.stringify(profile, null, 2)}
+
+Completed Tasks:
+${completed.map(t => t.task).join("\n")}
+
+Pending Tasks:
+${pending.map(t => t.task).join("\n")}
+
+Recent Notes:
+${notes
+  .slice(-5)
+  .map(n => n.content)
+  .join("\n")}
+
+Write:
+
+1. Progress Summary
+2. Key Achievement
+3. Biggest Bottleneck
+4. Recommendation for Tomorrow
+
+Keep it concise.
+`;
+
+  const review =
+    await askAI(prompt);
+
+  console.log(
+    "\n📊 Daily Review\n"
+  );
+
+  console.log(review);
+  console.log();
+
+  continue;
+}
+   
+    if (
+  userMessage.toLowerCase().startsWith(
+    "search notes "
+  )
+) {
+
+  const query = userMessage
+    .replace(/^search notes /i, "")
+    .trim()
+    .toLowerCase();
+
+  const notes = await loadNotes();
+
+  const results = notes.filter(
+    note =>
+      note.content
+        .toLowerCase()
+        .includes(query)
+  );
+
+  if (results.length === 0) {
+
+    console.log(
+      "\nAI: No matching notes found.\n"
+    );
+
+    continue;
+  }
+
+  console.log(
+    "\n🔍 Matching Notes:\n"
+  );
+
+  results.forEach(note => {
+    console.log(
+      `${note.id} - ${note.content}`
+    );
+  });
+
+  console.log();
+
+  continue;
+}
+if (
+  userMessage.toLowerCase().startsWith(
+    "delete note "
+  )
+) {
+
+  const noteId = Number(
+    userMessage.replace(
+      /^delete note /i,
+      ""
+    ).trim()
+  );
+
+  const notes = await loadNotes();
+
+  const updatedNotes =
+    notes.filter(
+      note => note.id !== noteId
+    );
+
+  if (
+    updatedNotes.length === notes.length
+  ) {
+
+    console.log(
+      "\nAI: Note not found.\n"
+    );
+
+    continue;
+  }
+
+  await saveNotes(updatedNotes);
+
+  console.log(
+    `\n🗑️ Deleted note ${noteId}\n`
+  );
+
+  continue;
+}
+
+ if (
+  userMessage.toLowerCase().startsWith(
+    "ask notes "
+  )
+) {
+
+  const question = userMessage
+    .replace(/^ask notes /i, "")
+    .trim();
+
+  const notes = await loadNotes();
+
+  if (notes.length === 0) {
+
+    console.log(
+      "\nAI: No notes found.\n"
+    );
+
+    continue;
+  }
+
+  const questionWords =
+  question.toLowerCase().split(" ");
+
+const matchingNotes = notes.filter(
+  note =>
+    questionWords.some(word =>
+      note.content
+        .toLowerCase()
+        .includes(word)
+    )
+);
+
+const relevantNotes =
+  matchingNotes.length > 0
+    ? matchingNotes
+        .map(note => note.content)
+        .join("\n")
+    : "";
+
+  const prompt = `
+You are answering using ONLY
+the user's notes.
+
+User Notes:
+${relevantNotes}
+
+Question:
+${question}
+
+Answer using the notes.
+If the answer is not in the notes,
+say "I couldn't find that in your notes."
+`;
+
+  const answer =
+    await askAI(prompt);
+
+  console.log(
+    "\n📚 Notes Answer:\n"
+  );
+
+  console.log(answer);
+  console.log();
+
+  continue;
+}
+
+
+    if (
+  userMessage.toLowerCase().startsWith(
+    "save note "
+  )
+) {
+
+  const noteContent =
+    userMessage.replace(
+      /^save note /i,
+      ""
+    );
+
+  const notes =
+    await loadNotes();
+
+notes.push({
+  id: notes.length + 1,
+  content: noteContent
+});
+
+  await saveNotes(notes);
+
+  console.log(
+    "\n📝 Note saved.\n"
+  );
+
+  continue;
+}
+
+if (
+  userMessage.toLowerCase() ===
+  "show notes"
+) {
+
+  const notes =
+    await loadNotes();
+
+  if (notes.length === 0) {
+
+    console.log(
+      "\nAI: No notes found.\n"
+    );
+
+    continue;
+  }
+  console.log(
+    "\n📝 Notes:\n"
+  );
+
+  notes.forEach(note => {
+    console.log(
+      `${note.id} - ${note.content}`
+    );
+  });
+
+  console.log();
+
+  continue;
+}
+    if (
+  userMessage.toLowerCase() ===
+  "show plan"
+) {
+
+  try {
+
+    const plan =
+      await fs.readFile(
+        "./day_plan.txt",
+        "utf-8"
+      );
+
+    console.log(
+      "\n📅 Today's Plan:\n"
+    );
+
+    console.log(plan);
+    console.log();
+
+  } catch {
+
+    console.log(
+      "\nAI: No plan found.\n"
+    );
+  }
+
+  continue;
+}
+
+    if (
+  userMessage.toLowerCase() ===
+  "plan my day"
+) {
+
+  const tasks = await loadTasks();
+
+  const pendingTasks = tasks.filter(
+    t => t.status === "pending"
+  );
+
+  if (pendingTasks.length === 0) {
+
+    console.log(
+      "\nAI: No pending tasks found.\n"
+    );
+
+    continue;
+  }
+
+  const prompt = `
+You are a productivity planner.
+
+User Profile:
+${JSON.stringify(profile, null, 2)}
+
+Pending Tasks:
+${pendingTasks
+  .map(t => t.task)
+  .join("\n")}
+
+Create a realistic day plan.
+
+Requirements:
+- Start at 9 AM
+- Include short breaks
+- Prioritize important career tasks
+- Include exercise if available
+- Return schedule in time blocks
+
+Keep it practical.
+`;
+
+  const dayPlan =
+    await askAI(prompt);
+    await fs.writeFile(
+  "./day_plan.txt",
+  dayPlan
+);
+
+  console.log(
+    "\n📅 Today's Plan:\n"
+  );
+
+  console.log(dayPlan);
+  console.log();
+
+  continue;
+}
     if (
   userMessage.toLowerCase() ===
   "recommend next task"

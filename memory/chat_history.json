@@ -6,5 +6,37 @@
   {
     "role": "assistant",
     "content": "Hello Sushan, I'd be happy to help plan a day for you. Considering your goal of building a personal AI agent, I'll suggest a day with a mix of work and breaks.\n\nHere's a suggested plan for the day:\n1. **Morning Review (9:00 am - 9:30 am)**: Start with a review of your progress on building your personal AI agent. Go through your notes, and see where you left off last time.\n2. **Java or Python Coding Session (9:30 am - 12:00 pm)**: Since you're working on an AI project, focus on writing code in your preferred language, Java, or your favorite language, Python. You could dedicate this session to implementing a new feature or fixing existing bugs.\n3. **Lunch Break (12:00 pm - 1:30 pm)**: Take a break and recharge. You could use this time to read about the latest developments in AI, machine learning, or catch up on your favorite podcast.\n4. **Research and Learning (1:30 pm - 3:30 pm)**: Allocate some time to learn new concepts or explore new technologies related to AI. You could watch tutorials, online courses, or attend webinars to enhance your skills.\n5. **Project Implementation (3:30 pm - 5:00 pm)**: Apply what you learned during the research session to your project. Implement new features, test your code, and make necessary adjustments.\n6. **Evening Review and Planning (5:00 pm - 6:00 pm)**: Take some time to review what you accomplished during the day. Plan your next steps, and make a to-do list for the next day.\n\nFeel free to adjust this plan to suit your needs and preferences. How does this sound? Would you like to make any changes or add anything to the plan?"
+  },
+  {
+    "role": "user",
+    "content": "sort task"
+  },
+  {
+    "role": "assistant",
+    "content": "You'd like to sort your tasks. Based on our previous conversation, I recall that we had planned out a day for you with several tasks related to building your personal AI agent. Let's sort those tasks for you.\n\nHere are the tasks in a sorted order, prioritizing the most important ones first:\n\n1. **Java or Python Coding Session (9:30 am - 12:00 pm)**: This task is crucial as it involves writing code for your AI project.\n2. **Project Implementation (3:30 pm - 5:00 pm)**: Implementing new features and testing your code is essential to making progress on your project.\n3. **Research and Learning (1:30 pm - 3:30 pm)**: Learning new concepts and exploring new technologies is vital for enhancing your skills and staying up-to-date in the field of AI.\n4. **Morning Review (9:00 am - 9:30 am)**: Reviewing your progress and planning your day is important to ensure you're on track with your goals.\n5. **Evening Review and Planning (5:00 pm - 6:00 pm)**: Taking time to review what you've accomplished and planning your next steps is crucial for adjusting your strategy and making progress.\n\nThe lunch break (12:00 pm - 1:30 pm) is, of course, a necessary break to recharge and refocus.\n\nIf you'd like to sort these tasks differently or add any new tasks, feel free to let me know, and I'll be happy to assist you, Sushan."
+  },
+  {
+    "role": "user",
+    "content": "search notes react"
+  },
+  {
+    "role": "assistant",
+    "content": "It seems like you're looking to search through your notes, specifically related to React. I recall that your primary focus has been on building a personal AI agent, and you've been working with Java and Python. However, I don't have any specific notes from our previous conversations related to React.\n\nIf you've been taking notes on React, I can suggest a few options to help you search through them. You could try searching through your local note-taking app or file system for any mentions of React. Alternatively, if you've been using a cloud-based note-taking service, you can try searching through your online notes.\n\nIf you'd like, I can also help you create a new note or summary on React, specifically in the context of your AI project. Perhaps we could discuss how React could be used in conjunction with your Java or Python code to create a more robust and user-friendly interface for your AI agent.\n\nLet me know if there's anything specific you'd like to know or discuss about React, and I'll do my best to assist you, Sushan."
+  },
+  {
+    "role": "user",
+    "content": "search note react"
+  },
+  {
+    "role": "assistant",
+    "content": "It seems like you're looking to search through your notes on React again, Sushan. I recall that we just discussed this topic, and I mentioned that I didn't have any specific notes from our previous conversations related to React. However, I did suggest a few options to help you search through your notes, such as checking your local note-taking app or cloud-based service.\n\nIf you're still having trouble finding the notes you're looking for, I can try to help you brainstorm or create a new note on React. Perhaps we could discuss how React could be used in conjunction with your Java or Python code to create a more robust and user-friendly interface for your AI agent.\n\nTo better assist you, could you please clarify what specific aspect of React you're trying to find notes on? Are you looking for information on how to integrate React with your AI project, or is there something else I can help you with?"
+  },
+  {
+    "role": "user",
+    "content": "search notes react"
+  },
+  {
+    "role": "assistant",
+    "content": "We've just discussed this, Sushan. You're looking to search through your notes on React again. I recall that I didn't have any specific notes from our previous conversations related to React, and I suggested checking your local note-taking app or cloud-based service.\n\nTo be honest, I'm not sure what else I can do to help you find those notes. If you're still having trouble, could you please clarify what specific aspect of React you're trying to find notes on? Are you looking for information on how to integrate React with your Java or Python code for your AI project? Perhaps we could discuss that topic, and I can try to help you create a new note or summary on React."
   }
 ]

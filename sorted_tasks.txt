@@ -1,42 +1,30 @@
-Here's a prioritized categorization of your tasks:
+### Task Prioritization
 
----
+#### High Priority
+1. **Apply for Internship** - Career move
+2. **Update Resume** - Job requirement
+3. **Exercise for 30 Minutes** - Physical health
+4. **Drink 3 Liters Water** - Daily hydration
+5. **Sleep Before 11 PM** - Mental health
+6. **Build Portfolio Website** - Professional presence
+7. **Connect with 5 Recruiters** - Career networking
 
-### 1. High Priority
+#### Medium Priority
+1. **Solve 5 LeetCode Problems** - Coding skills
+2. **Complete DBMS Notes** - Academic task
+3. **Study Operating Systems** - Knowledge gain
+4. **Study Computer Networks** - Knowledge gain
+5. **Clean Workspace** - Productivity boost
+6. **Plan Next Week** - Organization tool
 
-*   **Apply for Internship**: Submit applications for internships.
-*   **Update Resume**: Polish resume for job applications.
-*   **Build Portfolio Website**: Showcase projects for job applications.
-*   **Solve 5 LeetCode Problems**: Improve problem-solving for interviews.
-*   **Prepare for Technical Interviews**: Practice for coding and system interviews.
-*   **Create LinkedIn Profile**: Establish professional online presence.
-*   **Exercise for 30 Minutes**: Maintain physical health and well-being.
-*   **Drink 3 Liters of Water**: Stay hydrated for health.
-*   **Sleep Before 11 PM**: Ensure adequate rest and recovery.
-*   **Plan Next Week**: Organize tasks for future productivity.
-
-### 2. Medium Priority
-
-*   **Learn React**: Master React for web development.
-*   **Contribute to Open Source**: Enhance skills, boost resume.
-*   **Learn Node.js**: Master backend web development.
-*   **Complete DBMS Notes**: Consolidate database management knowledge.
-*   **Practice Aptitude Questions**: Improve logical and quantitative skills.
-*   **Study Operating Systems**: Understand core computer science concepts.
-*   **Study Computer Networks**: Learn network communication principles.
-*   **Build AI Agent**: Develop an artificial intelligence agent.
-*   **Learn Docker**: Containerize applications for deployment.
-*   **Connect with 5 Professionals on LinkedIn**: Expand professional network connections.
-*   **Clean Workspace**: Organize for better focus.
-*   **Call Parents**: Maintain family connections and support.
-
-### 3. Low Priority
-
-*   **Learn System Design**: Understand scalable system architecture.
-*   **Learn LangGraph**: Master advanced LLM graph tools.
-*   **Learn Kubernetes**: Orchestrate containerized applications at scale.
-*   **Read AI Research Article**: Stay updated on AI advancements.
-*   **Play Cricket**: Engage in recreational sports.
-*   **Watch a Movie**: Enjoy entertainment and relaxation.
-*   **Watch YouTube**: Browse videos for leisure.
-*   **learn IOT**: Understand Internet of Things technology.
+#### Low Priority
+1. **Learn Node.js** - Skill development
+2. **Build AI Agent** - Project work
+3. **Learn LangGraph** - Knowledge expansion
+4. **Learn Docker** - Skill enhancement
+5. **Learn Kubernetes** - Skill enhancement
+6. **Contribute to Open Source** - Community work
+7. **Learn System Design** - Knowledge depth
+8. **Practice Aptitude Questions** - Skill refinement
+9. **Read AI Research Paper** - Knowledge update
+10. **Build Personal Agent v2** - Personal project
