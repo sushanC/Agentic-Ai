@@ -1,19 +1,42 @@
-Here's a prioritized list of your tasks:
+Here's a prioritized categorization of your tasks:
+
+---
 
 ### 1. High Priority
 
-*   **Find An Internship:** Immediate career goal, high impact.
-*   **Learn React:** Essential skill, career foundation, JS.
-*   **Solve Leet Code Problems:** Vital for technical interview prep.
-*   **Build portfolio Website:** Showcases skills, attracts opportunities.
-*   **Complete Internship:** Crucial experience, professional growth.
+*   **Apply for Internship**: Submit applications for internships.
+*   **Update Resume**: Polish resume for job applications.
+*   **Build Portfolio Website**: Showcase projects for job applications.
+*   **Solve 5 LeetCode Problems**: Improve problem-solving for interviews.
+*   **Prepare for Technical Interviews**: Practice for coding and system interviews.
+*   **Create LinkedIn Profile**: Establish professional online presence.
+*   **Exercise for 30 Minutes**: Maintain physical health and well-being.
+*   **Drink 3 Liters of Water**: Stay hydrated for health.
+*   **Sleep Before 11 PM**: Ensure adequate rest and recovery.
+*   **Plan Next Week**: Organize tasks for future productivity.
 
 ### 2. Medium Priority
 
-*   **Contribute in Github OpenSource:** Develops skills, builds long-term resume.
+*   **Learn React**: Master React for web development.
+*   **Contribute to Open Source**: Enhance skills, boost resume.
+*   **Learn Node.js**: Master backend web development.
+*   **Complete DBMS Notes**: Consolidate database management knowledge.
+*   **Practice Aptitude Questions**: Improve logical and quantitative skills.
+*   **Study Operating Systems**: Understand core computer science concepts.
+*   **Study Computer Networks**: Learn network communication principles.
+*   **Build AI Agent**: Develop an artificial intelligence agent.
+*   **Learn Docker**: Containerize applications for deployment.
+*   **Connect with 5 Professionals on LinkedIn**: Expand professional network connections.
+*   **Clean Workspace**: Organize for better focus.
+*   **Call Parents**: Maintain family connections and support.
 
 ### 3. Low Priority
 
-*   **Watch Movies:** Relaxation, destress, recharge mind.
-*   **Play Cricket:** Physical, mental well-being, recreation.
-*   **Take a Nap:** Short rest, boosts focus.
+*   **Learn System Design**: Understand scalable system architecture.
+*   **Learn LangGraph**: Master advanced LLM graph tools.
+*   **Learn Kubernetes**: Orchestrate containerized applications at scale.
+*   **Read AI Research Article**: Stay updated on AI advancements.
+*   **Play Cricket**: Engage in recreational sports.
+*   **Watch a Movie**: Enjoy entertainment and relaxation.
+*   **Watch YouTube**: Browse videos for leisure.
+*   **learn IOT**: Understand Internet of Things technology.
