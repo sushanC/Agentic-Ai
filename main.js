@@ -117,19 +117,6 @@ function ask(question) {
 // =====================
 // Main Agent
 // =====================
-async function readTasks() {
-  try {
-    const data = await fs.readFile(
-      "./tasks.txt",
-      "utf-8"
-    );
-
-    return data.split("\n").filter(Boolean);
-
-  } catch {
-    return [];
-  }
-}
 async function readSortedTasks() {
   try {
     return await fs.readFile(
@@ -141,12 +128,29 @@ async function readSortedTasks() {
   }
 }
 
+    async function loadTasks() {
+  try {
+    const data = await fs.readFile(
+      "./tasks.json",
+      "utf-8"
+    );
+
+    return JSON.parse(data);
+
+  } catch {
+    return [];
+  }
+}
+
 async function saveTasks(tasks) {
   await fs.writeFile(
-    "./tasks.txt",
-    tasks.join("\n")
+    "./tasks.json",
+    JSON.stringify(tasks, null, 2)
   );
 }
+
+
+
 async function main() {
 
   const profile = await loadProfile();
@@ -163,6 +167,203 @@ async function main() {
       console.log("👋 Goodbye!");
       break;
     }
+    if (
+  userMessage.toLowerCase() ===
+  "recommend next task"
+) {
+
+  const tasks = await loadTasks();
+
+  const pendingTasks = tasks.filter(
+    t => t.status === "pending"
+  );
+
+  if (pendingTasks.length === 0) {
+
+    console.log(
+      "\nAI: No pending tasks found.\n"
+    );
+
+    continue;
+  }
+
+const prompt = `
+You are a productivity coach.
+
+User Profile:
+${JSON.stringify(profile, null, 2)}
+
+Pending Tasks:
+${pendingTasks
+  .map(t => t.task)
+  .join("\n")}
+
+Recommend:
+
+1. The single best task to do next.
+2. Why it should be done next.
+3. The next 3 tasks in order.
+
+Keep the answer concise.
+`;
+
+  const recommendation =
+    await askAI(prompt);
+
+  console.log(
+    "\n🎯 Recommendation:\n"
+  );
+
+  console.log(recommendation);
+  console.log();
+
+  continue;
+}
+    if (
+  userMessage.toLowerCase() ===
+  "pending tasks"
+) {
+
+  const tasks =
+    await loadTasks();
+
+  const pending =
+    tasks.filter(
+      t => t.status === "pending"
+    );
+
+  console.log(
+    "\n📋 Pending Tasks:\n"
+  );
+
+  pending.forEach(
+    (t, index) => {
+      console.log(
+        `${index + 1}. ${t.task}`
+      );
+    }
+  );
+
+  console.log();
+
+  continue;
+}
+
+if (
+  userMessage.toLowerCase() ===
+  "completed tasks"
+) {
+
+  const tasks =
+    await loadTasks();
+
+  const completed =
+    tasks.filter(
+      t => t.status === "completed"
+    );
+
+  console.log(
+    "\n✅ Completed Tasks:\n"
+  );
+  if (completed.length === 0) {
+  console.log("\nAI: No completed tasks.\n");
+  continue;
+}
+
+  completed.forEach(
+    (t, index) => {
+      console.log(
+        `${index + 1}. ${t.task}`
+      );
+    }
+  );
+
+  console.log();
+
+  continue;
+}
+
+if (
+  userMessage.toLowerCase() ===
+  "task stats"
+) {
+
+  const tasks =
+    await loadTasks();
+
+  const completed =
+    tasks.filter(
+      t => t.status === "completed"
+    ).length;
+
+  const pending =
+    tasks.filter(
+      t => t.status === "pending"
+    ).length;
+
+  console.log("\n📊 Task Stats\n");
+
+  console.log(
+    `Total: ${tasks.length}`
+  );
+
+  console.log(
+    `Completed: ${completed}`
+  );
+
+  console.log(
+    `Pending: ${pending}`
+  );
+  const progress =
+  tasks.length === 0
+    ? 0
+    : ((completed / tasks.length) * 100).toFixed(1);
+
+console.log(
+  `Progress: ${progress}%`
+);
+
+  console.log();
+
+  continue;
+}
+    if (
+  userMessage.toLowerCase().startsWith(
+    "complete task "
+  )
+) {
+
+  const taskName = userMessage
+    .replace(/^complete task /i, "")
+    .trim();
+
+  const tasks = await loadTasks();
+
+  const task = tasks.find(
+    t =>
+      t.task.toLowerCase() ===
+      taskName.toLowerCase()
+  );
+
+  if (!task) {
+
+    console.log(
+      "\nAI: Task not found.\n"
+    );
+
+    continue;
+  }
+
+  task.status = "completed";
+
+  await saveTasks(tasks);
+
+  console.log(
+    `\nAI: Marked "${taskName}" as completed.\n`
+  );
+
+  continue;
+}
 
     if (userMessage.toLowerCase() === "show sorted tasks") {
 
@@ -187,19 +388,29 @@ async function main() {
 
     if (userMessage.toLowerCase() === "sort tasks") {
 
-  const tasks = await readTasks();
+  const tasks = await loadTasks();
 
-  if (tasks.length === 0) {
-    console.log("\nAI: No tasks found.\n");
+  const pendingTasks = tasks.filter(
+    t => t.status === "pending"
+  );
+
+  if (pendingTasks.length === 0) {
+
+    console.log(
+      "\nAI: No pending tasks found.\n"
+    );
+
     continue;
   }
 
   const prompt = `
 You are a productivity assistant.
 
-Given these tasks:
+Given these pending tasks:
 
-${tasks.join("\n")}
+${pendingTasks
+  .map(t => t.task)
+  .join("\n")}
 
 Categorize them into:
 
@@ -232,12 +443,19 @@ Return the result in a clean format.
 
     if (userMessage.toLowerCase() === "show tasks") {
 
-  const tasks = await readTasks();
+  const tasks = await loadTasks();
 
-  console.log("\nTasks:\n");
-
-  tasks.forEach((task, index) => {
-    console.log(`${index + 1}. ${task}`);
+  console.log("\n📋 Tasks:\n");
+  if (tasks.length === 0) {
+  console.log(
+    "\nAI: No tasks found.\n"
+  );
+  continue;
+}
+  tasks.forEach((t, index) => {
+    console.log(
+      `${index + 1}. ${t.task} (${t.status})`
+    );
   });
 
   console.log();
@@ -251,18 +469,30 @@ if (
   )
 ) {
 
-  const task = userMessage
+  const taskName = userMessage
     .replace(/^add task /i, "")
     .trim();
 
-  const tasks = await readTasks();
+  const tasks = await loadTasks();
 
-  tasks.push(task);
+  const exists = tasks.some(
+  t => t.task.toLowerCase() === taskName.toLowerCase()
+);
+
+if (exists) {
+  console.log("\nAI: Task already exists.\n");
+  continue;
+}
+
+tasks.push({
+  task: taskName,
+  status: "pending"
+});
 
   await saveTasks(tasks);
 
   console.log(
-    `\nAI: Added task "${task}"\n`
+    `\nAI: Added task "${taskName}"\n`
   );
 
   continue;
@@ -273,19 +503,22 @@ if (
   )
 ) {
 
-  const task = userMessage
+  const taskName = userMessage
     .replace(/^remove task /i, "")
     .trim();
 
-  const tasks = await readTasks();
+  const tasks = await loadTasks();
 
-  const updatedTasks =
-    tasks.filter(t => t.toLowerCase() !== task.toLowerCase());
+  const updatedTasks = tasks.filter(
+    t =>
+      t.task.toLowerCase() !==
+      taskName.toLowerCase()
+  );
 
   await saveTasks(updatedTasks);
 
   console.log(
-    `\nAI: Removed task "${task}"\n`
+    `\nAI: Removed "${taskName}"\n`
   );
 
   continue;

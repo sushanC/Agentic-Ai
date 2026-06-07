@@ -1,0 +1,114 @@
+[
+  {
+    "task": "Apply for Internship",
+    "status": "pending"
+  },
+  {
+    "task": "Update Resume",
+    "status": "pending"
+  },
+  {
+    "task": "Build Portfolio Website",
+    "status": "pending"
+  },
+  {
+    "task": "Solve 5 LeetCode Problems",
+    "status": "pending"
+  },
+  {
+    "task": "Learn React",
+    "status": "completed"
+  },
+  {
+    "task": "Learn Node.js",
+    "status": "pending"
+  },
+  {
+    "task": "Build AI Agent",
+    "status": "pending"
+  },
+  {
+    "task": "Learn LangGraph",
+    "status": "pending"
+  },
+  {
+    "task": "Learn Docker",
+    "status": "pending"
+  },
+  {
+    "task": "Learn Kubernetes",
+    "status": "pending"
+  },
+  {
+    "task": "Contribute to Open Source",
+    "status": "pending"
+  },
+  {
+    "task": "Create LinkedIn Profile",
+    "status": "completed"
+  },
+  {
+    "task": "Connect with 5 Recruiters",
+    "status": "pending"
+  },
+  {
+    "task": "Complete DBMS Notes",
+    "status": "pending"
+  },
+  {
+    "task": "Study Operating Systems",
+    "status": "pending"
+  },
+  {
+    "task": "Study Computer Networks",
+    "status": "pending"
+  },
+  {
+    "task": "Learn System Design",
+    "status": "pending"
+  },
+  {
+    "task": "Practice Aptitude Questions",
+    "status": "pending"
+  },
+  {
+    "task": "Read AI Research Paper",
+    "status": "pending"
+  },
+  {
+    "task": "Build Personal Agent v2",
+    "status": "pending"
+  },
+  {
+    "task": "Exercise for 30 Minutes",
+    "status": "pending"
+  },
+  {
+    "task": "Drink 3 Liters Water",
+    "status": "pending"
+  },
+  {
+    "task": "Sleep Before 11 PM",
+    "status": "pending"
+  },
+  {
+    "task": "Go for a Walk",
+    "status": "completed"
+  },
+  {
+    "task": "Play Cricket",
+    "status": "pending"
+  },
+  {
+    "task": "Watch Movie",
+    "status": "pending"
+  },
+  {
+    "task": "Clean Workspace",
+    "status": "pending"
+  },
+  {
+    "task": "Plan Next Week",
+    "status": "pending"
+  }
+]
