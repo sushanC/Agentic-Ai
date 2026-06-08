@@ -3,6 +3,8 @@ import OpenAI from "openai";
 import { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import readline from "readline";
+import axios from "axios";
+// import * as pdfParse from "pdf-parse";
 
 // =====================
 // AI Clients
@@ -17,6 +19,66 @@ const groq = new OpenAI({
   baseURL: "https://api.groq.com/openai/v1"
 });
 
+async function webSearch(query) {
+
+  const response =
+    await axios.post(
+      "https://google.serper.dev/search",
+      {
+        q: query
+      },
+      {
+        headers: {
+          "X-API-KEY":
+            process.env.SERPER_API_KEY,
+          "Content-Type":
+            "application/json"
+        }
+      }
+    );
+
+  return response.data.organic || [];
+}
+
+async function loadPDF(pdfPath) {
+
+  const pdfParse =
+    await import("pdf-parse");
+
+  // console.log(pdfParse);
+
+  return "";
+}
+
+async function loadPDFMemory() {
+
+  try {
+
+    const data =
+      await fs.readFile(
+        "./pdf_memory.json",
+        "utf-8"
+      );
+
+    return JSON.parse(data);
+
+  } catch {
+
+    return {};
+  }
+}
+
+async function savePDFMemory(memory) {
+
+  await fs.writeFile(
+    "./pdf_memory.json",
+    JSON.stringify(
+      memory,
+      null,
+      2
+    )
+  );
+}
 // =====================
 // Memory Functions
 // =====================
@@ -187,6 +249,211 @@ async function main() {
       console.log("👋 Goodbye!");
       break;
     }
+
+    async function extractMemory(userMessage) {
+
+  const prompt = `
+Extract personal facts from this message.
+
+Message:
+${userMessage}
+
+Return JSON only.
+
+Example:
+{
+  "favorite language": "Python"
+}
+
+If nothing important exists:
+{}
+`;
+
+  const response = await askAI(prompt);
+
+  try {
+    return JSON.parse(response);
+  } catch {
+    return {};
+  }
+}
+
+
+    if (
+  userMessage.toLowerCase().startsWith(
+    "load pdf "
+  )
+) {
+
+  const pdfPath =
+    userMessage.replace(
+      /^load pdf /i,
+      ""
+    );
+
+  try {
+
+    const text =
+      await loadPDF(pdfPath);
+
+    const pdfMemory =
+      await loadPDFMemory();
+
+    pdfMemory[pdfPath] = text;
+
+    await savePDFMemory(
+      pdfMemory
+    );
+
+    console.log(
+      "\n📄 PDF Loaded Successfully\n"
+    );
+
+  } catch (err) {
+
+  console.log(
+    "\nAI: Could not load PDF.\n"
+  );
+
+  console.error(err);
+}
+
+  continue;
+}
+
+if (
+  userMessage.toLowerCase().startsWith(
+    "ask pdf "
+  )
+) {
+
+  const question =
+    userMessage.replace(
+      /^ask pdf /i,
+      ""
+    );
+
+  const pdfMemory =
+    await loadPDFMemory();
+
+  const pdfText =
+    Object.values(pdfMemory)
+      .join("\n");
+
+  if (!pdfText) {
+
+    console.log(
+      "\nAI: No PDFs loaded.\n"
+    );
+
+    continue;
+  }
+
+  const prompt = `
+Answer using ONLY the PDF content.
+
+PDF Content:
+${pdfText.slice(0, 15000)}
+
+Question:
+${question}
+`;
+
+  const answer =
+    await askAI(prompt);
+
+  console.log(
+    "\n📄 PDF Answer:\n"
+  );
+
+  console.log(answer);
+  console.log();
+
+  continue;
+}
+
+    if (
+  !userMessage.startsWith("add task") &&
+  !userMessage.startsWith("show") &&
+  !userMessage.startsWith("complete task") &&
+  !userMessage.startsWith("remove task")
+) {
+
+  const memory =
+    await extractMemory(userMessage);
+
+  if (
+    Object.keys(memory).length > 0
+  ) {
+
+    Object.assign(
+      profile,
+      memory
+    );
+
+    await saveProfile(profile);
+  }
+}
+
+    if (
+  userMessage.toLowerCase().startsWith(
+    "web search "
+  )
+) {
+
+  const query = userMessage
+    .replace(/^web search /i, "")
+    .trim();
+
+  console.log(
+    "\n🔍 Searching web...\n"
+  );
+
+  const results =
+    await webSearch(query);
+
+  if (results.length === 0) {
+
+    console.log(
+      "\nAI: No results found.\n"
+    );
+
+    continue;
+  }
+
+  const searchContext =
+    results
+      .slice(0, 5)
+      .map(
+        r =>
+          `${r.title}\n${r.snippet}`
+      )
+      .join("\n\n");
+
+  const prompt = `
+Use these search results to answer.
+
+Search Query:
+${query}
+
+Results:
+${searchContext}
+
+Give a concise answer.
+`;
+
+  const answer =
+    await askAI(prompt);
+
+  console.log(
+    "\n🌐 Web Answer:\n"
+  );
+
+  console.log(answer);
+  console.log();
+
+  continue;
+}
 
     if (
   userMessage.toLowerCase() ===
@@ -413,7 +680,7 @@ say "I couldn't find that in your notes."
     await loadNotes();
 
 notes.push({
-  id: notes.length + 1,
+  id: Date.now(),
   content: noteContent
 });
 
@@ -893,14 +1160,20 @@ if (
       taskName.toLowerCase()
   );
 
-  await saveTasks(updatedTasks);
+if (
+  updatedTasks.length === tasks.length
+) {
 
   console.log(
-    `\nAI: Removed "${taskName}"\n`
+    "\nAI: Task not found.\n"
   );
 
   continue;
 }
+
+  continue;
+}
+
 
     // =====================
     // REMEMBER COMMAND

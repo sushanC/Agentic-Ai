@@ -2,5 +2,7 @@
   "name": "Sushan",
   "goal": "Build a personal AI agent",
   "preferred_language": "Java",
-  "favorite language": "Python"
+  "favorite language": "C++",
+  "likes": "dogs",
+  "favorite sport": "Cricket"
 }
