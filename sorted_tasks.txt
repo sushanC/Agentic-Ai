@@ -1,30 +1,27 @@
-### Task Prioritization
+### High Priority Tasks
+1. Apply for Internship - Job application
+2. Update Resume - Career document
+3. Connect with Recruiters - Job networking
+4. Sleep Before 11 PM - Healthy sleep
+5. Drink 3 Liters Water - Stay hydrated
+6. Clean Workspace - Organized space
+7. Plan Next Week - Weekly plan
 
-#### High Priority
-1. **Apply for Internship** - Career move
-2. **Update Resume** - Job requirement
-3. **Exercise for 30 Minutes** - Physical health
-4. **Drink 3 Liters Water** - Daily hydration
-5. **Sleep Before 11 PM** - Mental health
-6. **Build Portfolio Website** - Professional presence
-7. **Connect with 5 Recruiters** - Career networking
+### Medium Priority Tasks
+1. Build Portfolio Website - Showcase skills
+2. Solve 5 LeetCode Problems - Coding practice
+3. Learn Node.js - New skill
+4. Complete DBMS Notes - Study notes
+5. Study Operating Systems - OS knowledge
+6. Study Computer Networks - Network basics
+7. Practice Aptitude Questions - Logical practice
 
-#### Medium Priority
-1. **Solve 5 LeetCode Problems** - Coding skills
-2. **Complete DBMS Notes** - Academic task
-3. **Study Operating Systems** - Knowledge gain
-4. **Study Computer Networks** - Knowledge gain
-5. **Clean Workspace** - Productivity boost
-6. **Plan Next Week** - Organization tool
-
-#### Low Priority
-1. **Learn Node.js** - Skill development
-2. **Build AI Agent** - Project work
-3. **Learn LangGraph** - Knowledge expansion
-4. **Learn Docker** - Skill enhancement
-5. **Learn Kubernetes** - Skill enhancement
-6. **Contribute to Open Source** - Community work
-7. **Learn System Design** - Knowledge depth
-8. **Practice Aptitude Questions** - Skill refinement
-9. **Read AI Research Paper** - Knowledge update
-10. **Build Personal Agent v2** - Personal project
+### Low Priority Tasks
+1. Build AI Agent - AI project
+2. Learn Docker - Container skill
+3. Learn Kubernetes - Deployment skill
+4. Contribute to Open Source - Community help
+5. Learn System Design - Design skill
+6. Read AI Research Paper - Research read
+7. Build Personal Agent v2 - Personal project
+8. Solve 10 LeetCode Problems - Coding challenge

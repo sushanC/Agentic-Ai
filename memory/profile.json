@@ -2,7 +2,8 @@
   "name": "Sushan",
   "goal": "Build a personal AI agent",
   "preferred_language": "Java",
-  "favorite language": "C++",
+  "favorite language": "c",
   "likes": "dogs",
-  "favorite sport": "Cricket"
+  "favorite sport": "Cricket",
+  "favorite color": "red"
 }

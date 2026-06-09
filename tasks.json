@@ -28,10 +28,6 @@
     "status": "pending"
   },
   {
-    "task": "Learn LangGraph",
-    "status": "pending"
-  },
-  {
     "task": "Learn Docker",
     "status": "pending"
   },
@@ -109,6 +105,10 @@
   },
   {
     "task": "Plan Next Week",
+    "status": "pending"
+  },
+  {
+    "task": "Solve 10 LeetCode Problems",
     "status": "pending"
   }
 ]
