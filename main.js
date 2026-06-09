@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import readline from "readline";
 import axios from "axios";
-// import * as pdfParse from "pdf-parse";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 
 // =====================
 // AI Clients
@@ -17,6 +17,14 @@ const ai = new GoogleGenAI({
 const groq = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: "https://api.groq.com/openai/v1"
+});
+
+const openrouter = new OpenAI({
+  apiKey:
+    process.env.OPENROUTER_API_KEY,
+
+  baseURL:
+    "https://openrouter.ai/api/v1"
 });
 
 async function webSearch(query) {
@@ -42,12 +50,47 @@ async function webSearch(query) {
 
 async function loadPDF(pdfPath) {
 
-  const pdfParse =
-    await import("pdf-parse");
+  const data =
+    new Uint8Array(
+      await fs.readFile(pdfPath)
+    );
 
-  // console.log(pdfParse);
+  const pdf =
+    await pdfjsLib
+      .getDocument({ data })
+      .promise;
 
-  return "";
+  let text = "";
+
+  for (
+    let pageNum = 1;
+    pageNum <= pdf.numPages;
+    pageNum++
+  ) {
+
+    const page =
+      await pdf.getPage(pageNum);
+
+    const content =
+      await page.getTextContent();
+
+    const pageText =
+      content.items
+        .map(item => item.str)
+        .join(" ");
+
+    text += pageText + "\n";
+  }
+
+  console.log(
+    `${pdfPath} -> ${text.length} chars`
+  );
+
+  console.log(
+    text.slice(0, 500)
+  );
+
+  return text;
 }
 
 async function loadPDFMemory() {
@@ -129,36 +172,113 @@ async function saveHistory(history) {
 // AI Router
 // =====================
 
-async function askAI(prompt) {
-  try {
+async function askGemini(prompt) {
 
-    console.log("🟢 Using Gemini...");
-
-    const response = await ai.models.generateContent({
+  const response =
+    await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
     });
 
-    return response.text;
+  return response.text;
+}
+
+async function askGroq(prompt) {
+
+  const completion =
+    await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    });
+
+  return completion
+    .choices[0]
+    .message
+    .content;
+}
+
+async function askOpenRouter(prompt) {
+
+  const completion =
+    await openrouter.chat.completions.create({
+      model:
+        "meta-llama/llama-3.3-70b-instruct",
+
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    });
+
+  return completion
+    .choices[0]
+    .message
+    .content;
+}
+
+async function askAI(prompt) {
+
+  try {
+
+    console.log(
+      "🟢 Using Groq..."
+    );
+
+    return await askGroq(prompt);
 
   } catch (err) {
 
-    console.log("🔴 Gemini failed.");
-    console.log("🟣 Switching to Groq...");
+    console.log(
+      "🔴 Groq failed."
+    );
 
-    const completion =
-      await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          {
-            role: "user",
-            content: prompt
-          }
-        ]
-      });
-
-    return completion.choices[0].message.content;
+    console.error(err.message);
   }
+
+  try {
+
+    console.log(
+      "🟡 Using Gemini..."
+    );
+
+    return await askGemini(prompt);
+
+  } catch (err) {
+
+    console.log(
+      "🔴 Gemini failed."
+    );
+
+    console.error(err.message);
+  }
+
+  try {
+
+    console.log(
+      "🔵 Using OpenRouter..."
+    );
+
+    return await askOpenRouter(prompt);
+
+  } catch (err) {
+
+    console.log(
+      "🔴 OpenRouter failed."
+    );
+
+    console.error(err.message);
+  }
+
+  throw new Error(
+    "All AI providers failed."
+  );
 }
 
 // =====================
@@ -231,26 +351,7 @@ async function saveNotes(notes) {
     JSON.stringify(notes, null, 2)
   );
 }
-
-
-async function main() {
-
-  const profile = await loadProfile();
-  const history = await loadHistory();
-
-  console.log("🤖 Personal Agent Started");
-  console.log("Type 'bye' to quit.\n");
-
-  while (true) {
-
-    const userMessage = await ask("You: ");
-
-    if (userMessage.toLowerCase() === "bye") {
-      console.log("👋 Goodbye!");
-      break;
-    }
-
-    async function extractMemory(userMessage) {
+ async function extractMemory(userMessage) {
 
   const prompt = `
 Extract personal facts from this message.
@@ -278,6 +379,24 @@ If nothing important exists:
   }
 }
 
+
+
+async function main() {
+
+  const profile = await loadProfile();
+  const history = await loadHistory();
+
+  console.log("🤖 Personal Agent Started");
+  console.log("Type 'bye' to quit.\n");
+
+  while (true) {
+
+    const userMessage = await ask("You: ");
+
+    if (userMessage.toLowerCase() === "bye") {
+      console.log("👋 Goodbye!");
+      break;
+    }
 
     if (
   userMessage.toLowerCase().startsWith(
@@ -322,23 +441,105 @@ If nothing important exists:
 }
 
 if (
+  userMessage.toLowerCase() ===
+  "pdf info"
+) {
+
+  const pdfMemory =
+    await loadPDFMemory();
+
+  console.log(
+    "\n📚 PDF Statistics\n"
+  );
+
+  Object.entries(pdfMemory)
+    .forEach(([file, content]) => {
+
+      console.log(
+        `${file} -> ${content.length} chars`
+      );
+    });
+
+  console.log();
+
+  continue;
+}
+
+if (
+  userMessage.toLowerCase() ===
+  "list pdfs"
+) {
+
+  const pdfMemory =
+    await loadPDFMemory();
+
+  console.log("\n📚 Loaded PDFs:\n");
+
+  Object.keys(pdfMemory)
+    .forEach((file, index) => {
+
+      console.log(
+        `${index + 1}. ${file}`
+      );
+    });
+
+  console.log();
+
+  continue;
+}
+
+if (
   userMessage.toLowerCase().startsWith(
     "ask pdf "
   )
 ) {
 
-  const question =
-    userMessage.replace(
-      /^ask pdf /i,
-      ""
-    );
+const query = userMessage
+  .replace(/^ask pdf /i, "")
+  .trim();
+
+const firstSpace =
+  query.indexOf(" ");
+
+if (firstSpace === -1) {
+
+  console.log(
+    "\nUsage:\nask pdf <PDFNAME> <question>\n"
+  );
+
+  continue;
+}
+
+const pdfName =
+  query.substring(0, firstSpace);
+
+const question =
+  query.substring(firstSpace + 1);
 
   const pdfMemory =
     await loadPDFMemory();
 
-  const pdfText =
-    Object.values(pdfMemory)
-      .join("\n");
+const pdfKey =
+  Object.keys(pdfMemory).find(
+    file =>
+      file
+        .toLowerCase()
+        .includes(
+          pdfName.toLowerCase()
+        )
+  );
+
+if (!pdfKey) {
+
+  console.log(
+    `\nAI: PDF "${pdfName}" not found.\n`
+  );
+
+  continue;
+}
+
+const pdfText =
+  pdfMemory[pdfKey];
 
   if (!pdfText) {
 
@@ -349,11 +550,22 @@ if (
     continue;
   }
 
-  const prompt = `
-Answer using ONLY the PDF content.
+const prompt = `
+You are a PDF question-answering assistant.
+
+Answer ONLY using the PDF content provided.
+
+Rules:
+1. Do NOT use your own knowledge.
+2. If the answer is not explicitly present in the PDF, reply:
+   "Answer not found in this PDF."
+3. Be concise.
+
+PDF Name:
+${pdfKey}
 
 PDF Content:
-${pdfText.slice(0, 15000)}
+${pdfText.slice(0,15000)}
 
 Question:
 ${question}
@@ -1154,11 +1366,11 @@ if (
 
   const tasks = await loadTasks();
 
-  const updatedTasks = tasks.filter(
-    t =>
-      t.task.toLowerCase() !==
-      taskName.toLowerCase()
-  );
+ const updatedTasks = tasks.filter(
+  t =>
+    t.task.toLowerCase() !==
+    taskName.toLowerCase()
+);
 
 if (
   updatedTasks.length === tasks.length
@@ -1171,6 +1383,11 @@ if (
   continue;
 }
 
+await saveTasks(updatedTasks);
+
+console.log(
+  `\nAI: Removed "${taskName}"\n`
+);
   continue;
 }
 
