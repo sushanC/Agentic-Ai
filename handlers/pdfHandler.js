@@ -12,6 +12,11 @@ import {
   askAI
 } from "../services/ai.js";
 
+import {
+  getEmbedding,
+  cosineSimilarity
+} from "../services/embeddingService.js";
+
 
 export async function handlePDF(
   userMessage
@@ -112,8 +117,29 @@ if (
     const pdfMemory =
       await loadPDFMemory();
 
-    pdfMemory[pdfPath] =
-      chunkText(text);
+const chunks =
+  chunkText(text);
+
+const embeddedChunks =
+  [];
+
+for (
+  const chunk of chunks
+) {
+
+  const embedding =
+    await getEmbedding(
+      chunk
+    );
+
+  embeddedChunks.push({
+    text: chunk,
+    embedding
+  });
+}
+
+pdfMemory[pdfPath] =
+  embeddedChunks;
 
     await savePDFMemory(
       pdfMemory
@@ -138,187 +164,280 @@ if (
 }
 
 if (
-  userMessage.toLowerCase().startsWith(
-    "search pdf "
-  )
+  userMessage
+    .toLowerCase()
+    .startsWith(
+      "search pdf "
+    )
 ) {
 
   const keyword =
     userMessage
-      .replace(/^search pdf /i, "")
-      .trim()
-      .toLowerCase();
+      .replace(
+        /^search pdf /i,
+        ""
+      )
+      .trim();
 
   const pdfMemory =
     await loadPDFMemory();
 
-  let found = false;
+  const queryEmbedding =
+    await getEmbedding(
+      keyword
+    );
+
+  const scored =
+    [];
+
+  for (
+    const [file, chunks]
+    of Object.entries(
+      pdfMemory
+    )
+  ) {
+
+    chunks.forEach(
+      chunk => {
+
+        scored.push({
+
+          file,
+
+          text:
+            chunk.text,
+
+          score:
+            cosineSimilarity(
+              queryEmbedding,
+              chunk.embedding
+            )
+        });
+      }
+    );
+  }
+
+  scored.sort(
+    (a, b) =>
+      b.score - a.score
+  );
+
+  const matches =
+    scored
+      .filter(
+        item =>
+          item.score > 0.30
+      )
+      .slice(0, 5);
+
+  if (
+    matches.length === 0
+  ) {
+
+    console.log(
+      "\nAI: No matches found.\n"
+    );
+
+    return true;
+  }
 
   console.log(
     "\n📚 Search Results:\n"
   );
 
-  for (
-    const [file, chunks]
-    of Object.entries(pdfMemory)
-  ) {
+  matches.forEach(
+    item => {
 
-    chunks.forEach(
-      (chunk, index) => {
+      console.log(
+        `Score: ${item.score.toFixed(3)}`
+      );
 
-        if (
-          chunk
-            .toLowerCase()
-            .includes(keyword)
-        ) {
+      console.log(
+        `PDF: ${item.file}`
+      );
 
-          found = true;
+      console.log(
+        item.text.slice(0, 400)
+      );
 
-          console.log(
-            `\n📄 ${file}`
-          );
-
-          console.log(
-            `Chunk ${index + 1}`
-          );
-
-          console.log(
-            chunk.slice(0, 500)
-          );
-
-          console.log(
-            "\n-------------------"
-          );
-        }
-      }
-    );
-  }
-
-  if (!found) {
-
-    console.log(
-      "\nAI: No matches found.\n"
-    );
-  }
-  return true;
-}
-
-if (
-  userMessage.toLowerCase().startsWith(
-    "ask pdf "
-  )
-) {
-
-const query = userMessage
-  .replace(/^ask pdf /i, "")
-  .trim();
-
-const firstSpace =
-  query.indexOf(" ");
-
-if (firstSpace === -1) {
-
-  console.log(
-    "\nUsage:\nask pdf <PDFNAME> <question>\n"
+      console.log(
+        "\n-------------------\n"
+      );
+    }
   );
 
   return true;
 }
+if (
+  userMessage
+    .toLowerCase()
+    .startsWith(
+      "ask pdf "
+    )
+) {
 
-const pdfName =
-  query.substring(0, firstSpace);
+  const query =
+    userMessage
+      .replace(
+        /^ask pdf /i,
+        ""
+      )
+      .trim();
 
-const question =
-  query.substring(firstSpace + 1);
+  const firstSpace =
+    query.indexOf(" ");
+
+  if (
+    firstSpace === -1
+  ) {
+
+    console.log(
+      "\nUsage:\nask pdf <PDFNAME> <question>\n"
+    );
+
+    return true;
+  }
+
+  const pdfName =
+    query.substring(
+      0,
+      firstSpace
+    );
+
+  const question =
+    query.substring(
+      firstSpace + 1
+    );
 
   const pdfMemory =
     await loadPDFMemory();
 
-const pdfKey =
-  Object.keys(pdfMemory).find(
-    file =>
-      file
-        .toLowerCase()
-        .includes(
-          pdfName.toLowerCase()
-        )
-  );
+  const pdfKey =
+    Object.keys(
+      pdfMemory
+    ).find(
+      file =>
+        file
+          .toLowerCase()
+          .includes(
+            pdfName.toLowerCase()
+          )
+    );
 
-if (!pdfKey) {
+  if (!pdfKey) {
 
-  console.log(
-    `\nAI: PDF "${pdfName}" not found.\n`
-  );
+    console.log(
+      `\nAI: PDF "${pdfName}" not found.\n`
+    );
 
-  return true;
-}
+    return true;
+  }
 
   const chunks =
-  pdfMemory[pdfKey];
+    pdfMemory[pdfKey];
 
-  const questionWords =
-  question
-    .toLowerCase()
-    .split(" ");
-
-
-    const relevantChunks =
-  chunks.filter(chunk => {
-
-    const lowerChunk =
-      chunk.toLowerCase();
-
-    return questionWords.some(
-      word =>
-        lowerChunk.includes(word)
+  const queryEmbedding =
+    await getEmbedding(
+      question
     );
-  });
 
-  const context =
-  relevantChunks
-    .slice(0, 3)
-    .join("\n\n");
+  const scored =
+    chunks.map(
+      chunk => ({
 
-    if (
-  relevantChunks.length === 0
-) {
+        text:
+          chunk.text,
 
-  console.log(
-    "\nAI: Answer not found in this PDF.\n"
+        score:
+          cosineSimilarity(
+            queryEmbedding,
+            chunk.embedding
+          )
+      })
+    );
+
+  scored.sort(
+    (a, b) =>
+      b.score - a.score
   );
 
-  return true;
-}
+  const topChunks =
+    scored
+      .filter(
+        item =>
+          item.score > 0.25
+      )
+      .slice(0, 3);
 
-const prompt = `
+  if (
+    topChunks.length === 0
+  ) {
+
+    console.log(
+      "\nAI: Answer not found in this PDF.\n"
+    );
+
+    return true;
+  }
+
+  const context =
+    topChunks
+      .map(
+        item =>
+          item.text
+      )
+      .join(
+        "\n\n"
+      );
+
+  const prompt = `
 You are a PDF question-answering assistant.
 
-Answer ONLY from the PDF.
+Answer ONLY from the PDF content below.
 
-Relevant PDF Content:
+PDF Content:
 ${context}
 
 Question:
 ${question}
 
-If answer is missing,
-reply:
+Rules:
+- Use only the provided PDF content.
+- Do not make up information.
+- If the answer is missing, reply:
 "Answer not found in this PDF."
 `;
 
   const answer =
-    await askAI(prompt);
+    await askAI(
+      prompt
+    );
 
   console.log(
     "\n📄 PDF Answer:\n"
   );
 
-  console.log(answer);
+  console.log(
+    answer
+  );
+
+  console.log(
+    "\n📊 Retrieved Chunks:\n"
+  );
+
+  topChunks.forEach(
+    item => {
+
+      console.log(
+        `Score: ${item.score.toFixed(3)}`
+      );
+    }
+  );
+
   console.log();
 
   return true;
 }
-
 
   return false;
 }
