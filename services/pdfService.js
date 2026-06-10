@@ -1,6 +1,10 @@
 import fs from "fs/promises";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 
+import {
+  ocrPDF
+} from "./ocrService.js";
+
 export async function loadPDF(
   pdfPath
 ) {
@@ -51,8 +55,31 @@ export async function loadPDF(
   console.log(
     text.slice(0, 500)
   );
+  if (
+  text.trim().length < 100
+) {
 
-  return text;
+  console.log(
+    "\n⚠️ Scanned PDF detected."
+  );
+
+  console.log(
+    "🔍 Running OCR...\n"
+  );
+
+  const ocrText =
+    await ocrPDF(
+      pdfPath
+    );
+
+  console.log(
+    `OCR extracted ${ocrText.length} chars`
+  );
+
+  return ocrText;
+}
+
+return text;
 }
 
 export function chunkText(

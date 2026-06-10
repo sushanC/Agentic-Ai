@@ -391,23 +391,20 @@ if (
       );
 
   const prompt = `
-You are a PDF question-answering assistant.
+You are answering questions from OCR extracted study notes.
 
-Answer ONLY from the PDF content below.
+The OCR text may contain spelling mistakes.
+
+Use the provided content to infer the intended meaning.
+
+Do not invent information that is not supported by the content.
 
 PDF Content:
 ${context}
 
 Question:
 ${question}
-
-Rules:
-- Use only the provided PDF content.
-- Do not make up information.
-- If the answer is missing, reply:
-"Answer not found in this PDF."
 `;
-
   const answer =
     await askAI(
       prompt
