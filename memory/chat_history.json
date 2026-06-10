@@ -326,5 +326,13 @@
   {
     "role": "assistant",
     "content": "Hii Sushan, it's great to hear from you again. I see you've just said hello, so I'll start with a hello as well. How's your day going so far? Have you made any progress on your personal AI agent project? We were just discussing interview preparation earlier, and I was thinking we could continue with that if you'd like. Perhaps we could practice answering some technical questions related to Java or C, or work on some behavioral questions to help you showcase your skills and personality. By the way, I hope you're doing well and that you've been taking breaks to relax and recharge - perhaps watching a Cricket match or spending time with dogs? Your favorite color, red, is always a great way to add some vibrancy and energy to your day. What's on your mind, and how can I assist you today?"
+  },
+  {
+    "role": "user",
+    "content": "#include<stdio.h>"
+  },
+  {
+    "role": "assistant",
+    "content": "Hii Sushan, I see you've shared a code snippet in C, which is your favorite language. The code `#include<stdio.h>` is a header file inclusion directive, which allows you to use standard input/output functions in your C program.\n\nI recall that you've been working on building a personal AI agent, and you've been exploring different areas of computer science, including data structures, algorithms, and operating systems. You've also been loading PDF documents related to these topics, such as OSE and DBMS.\n\nAs we were discussing interview preparation earlier, I think this code snippet could be a great starting point for practicing technical questions. For example, we could discuss the different functions available in the `stdio.h` library, such as `printf()` or `scanf()`, and how to use them effectively.\n\nWould you like to write a simple C program using the `stdio.h` library? Perhaps we could create a program that takes user input and displays a greeting message, like \"Hello, Sushan!\"? Or we could work on a more complex program, such as a calculator or a game, to help you practice your coding skills.\n\nBy the way, I hope you're doing well and that you've been taking breaks to relax and recharge - perhaps watching a Cricket match or spending time with dogs? Your favorite color, red, is always a great way to add some vibrancy and energy to your coding sessions. How can I assist you today?"
   }
 ]

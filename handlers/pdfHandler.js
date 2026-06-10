@@ -436,5 +436,269 @@ ${question}
   return true;
 }
 
+if (
+  userMessage
+    .toLowerCase()
+    .startsWith(
+      "summarize pdf "
+    )
+) {
+
+  const pdfName =
+    userMessage
+      .replace(
+        /^summarize pdf /i,
+        ""
+      )
+      .trim();
+
+  const pdfMemory =
+    await loadPDFMemory();
+
+  const pdfKey =
+    Object.keys(
+      pdfMemory
+    ).find(
+      file =>
+        file
+          .toLowerCase()
+          .includes(
+            pdfName.toLowerCase()
+          )
+    );
+
+  if (!pdfKey) {
+
+    console.log(
+      `\nAI: PDF "${pdfName}" not found.\n`
+    );
+
+    return true;
+  }
+
+  const chunks =
+    pdfMemory[pdfKey];
+
+  const content =
+    chunks
+      .slice(0, 8)
+      .map(
+        chunk =>
+          chunk.text
+      )
+      .join("\n\n");
+
+  const prompt = `
+You are an expert study assistant.
+
+Summarize the PDF using this format:
+
+1. Main Topics
+
+2. Important Concepts
+
+3. Key Definitions
+
+4. Important Algorithms / Methods
+
+5. Exam Important Points
+
+6. 5 Quick Revision Notes
+
+PDF Content:
+${content}
+`;
+
+  const summary =
+    await askAI(
+      prompt
+    );
+
+  console.log(
+    "\n📚 PDF Summary:\n"
+  );
+
+  console.log(
+    summary
+  );
+
+  console.log();
+
+  return true;
+}
+if (
+  userMessage
+    .toLowerCase()
+    .startsWith(
+      "quiz pdf "
+    )
+) {
+
+  const pdfName =
+    userMessage
+      .replace(
+        /^quiz pdf /i,
+        ""
+      )
+      .trim();
+
+  const pdfMemory =
+    await loadPDFMemory();
+
+  const pdfKey =
+    Object.keys(
+      pdfMemory
+    ).find(
+      file =>
+        file
+          .toLowerCase()
+          .includes(
+            pdfName.toLowerCase()
+          )
+    );
+
+  if (!pdfKey) {
+
+    console.log(
+      `\nAI: PDF "${pdfName}" not found.\n`
+    );
+
+    return true;
+  }
+
+  const chunks =
+    pdfMemory[pdfKey];
+
+  const content =
+    chunks
+      .slice(0, 8)
+      .map(
+        chunk =>
+          chunk.text
+      )
+      .join("\n\n");
+
+  const prompt = `
+You are an exam paper setter.
+
+Using ONLY the PDF content,
+create:
+
+1. Five MCQs
+   (with answers)
+
+2. Five Short Answer Questions
+
+3. Two Long Answer Questions
+
+PDF Content:
+${content}
+`;
+
+  const quiz =
+    await askAI(
+      prompt
+    );
+
+  console.log(
+    "\n📝 PDF Quiz:\n"
+  );
+
+  console.log(
+    quiz
+  );
+
+  console.log();
+
+  return true;
+}
+if (
+  userMessage
+    .toLowerCase()
+    .startsWith(
+      "flashcards pdf "
+    )
+) {
+
+  const pdfName =
+    userMessage
+      .replace(
+        /^flashcards pdf /i,
+        ""
+      )
+      .trim();
+
+  const pdfMemory =
+    await loadPDFMemory();
+
+  const pdfKey =
+    Object.keys(
+      pdfMemory
+    ).find(
+      file =>
+        file
+          .toLowerCase()
+          .includes(
+            pdfName.toLowerCase()
+          )
+    );
+
+  if (!pdfKey) {
+
+    console.log(
+      `\nAI: PDF "${pdfName}" not found.\n`
+    );
+
+    return true;
+  }
+
+  const chunks =
+    pdfMemory[pdfKey];
+
+  const content =
+    chunks
+      .slice(0, 8)
+      .map(
+        chunk =>
+          chunk.text
+      )
+      .join("\n\n");
+
+  const prompt = `
+You are a study assistant.
+
+Using ONLY the PDF content,
+create 15 flashcards.
+
+Format:
+
+Q: Question
+
+A: Answer
+
+Keep answers short and easy to revise.
+
+PDF Content:
+${content}
+`;
+
+  const flashcards =
+    await askAI(
+      prompt
+    );
+
+  console.log(
+    "\n🃏 Flashcards:\n"
+  );
+
+  console.log(
+    flashcards
+  );
+
+  console.log();
+
+  return true;
+}
+
   return false;
 }

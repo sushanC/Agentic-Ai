@@ -1,0 +1,3 @@
+{
+  "lastQuestion": "**Problem Statement**\nGiven a sorted array of integers, find the first pair of elements that add up to a given target sum.\n\n**Example Input**\nArray: [1, 2, 3, 4, 5]\nTarget Sum: 7\n\n**Example Output**\n[2, 5] (because 2 + 5 = 7)\n\n**Constraints**\n- The input array will have at least 2 elements.\n- The input array will be sorted in ascending order.\n- The target sum will be a positive integer.\n- The array elements will be positive integers.\n\n**Hint**\nUse a two-pointer technique, starting from the beginning and end of the array, to find the pair of elements that add up to the target sum. This approach will allow you to take advantage of the fact that the array is sorted, making it possible to solve the problem in linear time complexity."
+}

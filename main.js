@@ -36,6 +36,10 @@ import {
   handleNotes
 } from "./handlers/notesHandler.js";
 
+import {
+  handleDSA
+} from "./handlers/dsaHandler.js";
+
 // =====================
 // Readline Helper
 // =====================
@@ -80,6 +84,12 @@ async function main() {
 
     const userMessage =
       await ask("You: ");
+
+      if (
+  await handleDSA(
+    userMessage
+  )
+) continue;
 
     if (
       userMessage
