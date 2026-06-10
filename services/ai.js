@@ -1,6 +1,14 @@
 import OpenAI from "openai";
 import { GoogleGenAI } from "@google/genai";
 
+import {
+  askOllama
+} from "./ollamaService.js";
+
+import {
+  loadAIMode
+} from "../storage/aiModeStorage.js";
+
 const ai = new GoogleGenAI({
   apiKey: process.env.API_KEY
 });
@@ -81,13 +89,32 @@ export async function askAI(
   prompt
 ) {
 
+  const mode =
+    await loadAIMode();
+
+  if (
+    mode.provider ===
+    "ollama"
+  ) {
+
+    console.log(
+      "🟢 Using Ollama..."
+    );
+
+    return await askOllama(
+      prompt
+    );
+  }
+
   try {
 
     console.log(
       "🟢 Using Groq..."
     );
 
-    return await askGroq(prompt);
+    return await askGroq(
+      prompt
+    );
 
   } catch (err) {
 
@@ -106,7 +133,9 @@ export async function askAI(
       "🟡 Using Gemini..."
     );
 
-    return await askGemini(prompt);
+    return await askGemini(
+      prompt
+    );
 
   } catch (err) {
 
@@ -144,7 +173,6 @@ export async function askAI(
     "All AI providers failed."
   );
 }
-
 export async function extractMemory(
   userMessage
 ) {

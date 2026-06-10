@@ -40,6 +40,14 @@ import {
   handleDSA
 } from "./handlers/dsaHandler.js";
 
+import {
+  handleAI
+} from "./handlers/aiHandler.js";
+
+import {
+  handleVoice
+} from "./handlers/voiceHandler.js";
+
 // =====================
 // Readline Helper
 // =====================
@@ -86,6 +94,12 @@ async function main() {
       await ask("You: ");
 
       if (
+  await handleVoice(
+    userMessage
+  )
+) continue;
+
+      if (
   await handleDSA(
     userMessage
   )
@@ -107,6 +121,11 @@ async function main() {
     // =====================
     // Command Handlers
     // =====================
+    if (
+  await handleAI(
+    userMessage
+  )
+) continue;
 
     if (
       await handleWeb(

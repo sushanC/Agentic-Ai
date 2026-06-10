@@ -1,67 +1,95 @@
-**Daily Plan for Sushan**
+**Sushan's Daily Productivity Plan**  
+**Start Time:** 9:00 AM  
+**End Time:** 8:00 PM (with buffer for sleep and personal tasks)  
 
-**9:00 AM - 9:30 AM: Morning Routine**
+---
 
-* Drink a glass of water (start working towards the 3-liter goal)
-* Quick 10-minute exercise to get the blood flowing
-* Spend 10 minutes reviewing the day's tasks and prioritizing them
-* Take a few minutes to play with dogs (if possible) to clear the mind
+### **9:00 AM - 10:00 AM: Focus on LeetCode**  
+- **Task:** Solve **3 LeetCode problems** (prioritize medium/easy).  
+- **Why:** Builds coding skills needed for AI agent and internships.  
+- **Break:** 10:00 AM - 10:15 AM (stretch, hydrate).  
 
-**9:30 AM - 10:30 AM: Resume Update**
+---
 
-* Work on updating the resume, focusing on highlighting relevant skills for the AI agent goal
-* Use this time to tailor the resume to the internship applications
+### **10:15 AM - 11:15 AM: AI Agent Development**  
+- **Task:** Work on **AI Agent v2** (Java/C). Focus on core logic, data structures, or integration.  
+- **Why:** Aligns with his main goal.  
+- **Break:** 11:15 AM - 11:30 AM (quick walk or dog walk—his favorite!).  
 
-**10:30 AM - 10:45 AM: Break**
+---
 
-* Take a short break to grab a snack, move around, and refresh the mind
-* Use this time to check cricket scores or watch a funny dog video to maintain a positive mood
+### **11:30 AM - 12:30 PM: Study DBMS**  
+- **Task:** Review **DBMS notes** (schema design, SQL queries, indexing).  
+- **Why:** Critical for backend systems in AI agent and job applications.  
+- **Break:** 12:30 PM - 12:45 PM (lunch + hydrate).  
 
-**10:45 AM - 12:15 PM: LeetCode Problems**
+---
 
-* Solve 2-3 LeetCode problems to get the problem-solving juices flowing
-* Focus on problems related to AI, machine learning, or algorithms to align with the goal
+### **12:45 PM - 1:45 PM: Resume & Internship Prep**  
+- **Task:**  
+  - Update resume (highlight AI/Java/C projects).  
+  - Apply for **1 internship** (research companies, tailor applications).  
+- **Why:** Directly supports career goals.  
+- **Break:** 1:45 PM - 2:00 PM (short walk).  
 
-**12:15 PM - 1:15 PM: Lunch Break**
+---
 
-* Take a break to eat lunch and recharge
-* Use this time to read a chapter from a book on AI research or listen to a podcast on AI-related topics
+### **2:00 PM - 3:00 PM: Learn Node.js**  
+- **Task:** Watch tutorials, practice basic server setup, and APIs.  
+- **Why:** Expands tech stack for portfolio and AI agent backend.  
+- **Break:** 3:00 PM - 3:15 PM (hydrate, snack).  
 
-**1:15 PM - 2:45 PM: Portfolio Website**
+---
 
-* Work on building the portfolio website, focusing on showcasing projects and skills
-* Use Java as the primary language for the website, incorporating red as the primary color to match personal preferences
+### **3:15 PM - 4:15 PM: Open Source Contribution**  
+- **Task:** Fork a project, fix a bug, or add a feature (preferably AI/DevOps-related).  
+- **Why:** Boosts portfolio and GitHub profile.  
+- **Break:** 4:15 PM - 4:30 PM (stretch, dog playtime).  
 
-**2:45 PM - 3:00 PM: Break**
+---
 
-* Take a short break to stretch, move around, and refresh the mind
-* Use this time to drink another glass of water and get closer to the 3-liter goal
+### **4:30 PM - 5:30 PM: Study Computer Networks**  
+- **Task:** Focus on TCP/IP, routing, or security basics (use notes or videos).  
+- **Why:** Fundamentals for system design and AI agent communication.  
+- **Break:** 5:30 PM - 5:45 PM (hydrate).  
 
-**3:00 PM - 4:00 PM: Node.js Learning**
+---
 
-* Spend time learning Node.js, focusing on its applications in AI and machine learning
-* Take notes and summarize key concepts to review later
+### **5:45 PM - 6:45 PM: Build Portfolio Website**  
+- **Task:** Design/update website (use static site generators or Java/C frameworks).  
+- **Why:** Showcase AI agent, projects, and skills.  
+- **Break:** 6:45 PM - 7:00 PM (light snack).  
 
-**4:00 PM - 4:30 PM: Break**
+---
 
-* Take a break to relax and recharge
-* Use this time to play with dogs or take a short walk outside to get some fresh air
+### **7:00 PM - 8:00 PM: Personal Development**  
+- **Task:**  
+  - **Read AI research paper** (15-30 mins).  
+  - **Practice aptitude questions** (quantitative, logical reasoning).  
+- **Why:** Prepares for interviews and deepens AI knowledge.  
+- **Break:** 8:00 PM - 8:15 PM (wind down).  
 
-**4:30 PM - 5:30 PM: AI Agent Research**
+---
 
-* Read AI research papers or articles to stay updated on the latest developments
-* Take notes and summarize key concepts to review later
+### **8:15 PM - 9:00 PM: Daily Wrap-Up**  
+- **Task:**  
+  - **Plan next week** (prioritize tasks, set goals).  
+  - **Drink 3 liters of water** (track intake).  
+  - **Clean workspace** (organize files, clear desk).  
+- **Why:** Maintains habits and reduces stress.  
 
-**5:30 PM - 6:00 PM: Wrap-up**
+---
 
-* Review the day's tasks and accomplishments
-* Plan the next day's tasks and prioritize them
-* Take a few minutes to clean the workspace and organize materials
+### **9:00 PM - 11:00 PM: Wind-Down**  
+- **Task:**  
+  - **Sleep before 11 PM** (ensure 7-8 hours of rest).  
+  - Optional: Light reading or meditation.  
 
-**6:00 PM - 10:00 PM: Personal Time**
+---
 
-* Use this time to relax, unwind, and recharge
-* Watch a cricket match, play with dogs, or engage in a favorite hobby
-* Make sure to drink the remaining water and aim to sleep before 11 PM
+**Key Notes:**  
+- **Flexibility:** Adjust blocks if tasks take longer (e.g., coding vs. studying).  
+- **Hydration:** Set reminders for water intake.  
+- **Focus:** Use Pomodoro technique (25 mins work + 5 mins break) for deep tasks.  
 
-This plan allows for a balance of work, breaks, and personal time, while also prioritizing tasks that align with Sushan's goals and interests. Remember to be flexible and adjust the plan as needed to ensure a productive and fulfilling day.
+This plan balances coding, learning, and personal habits while aligning with Sushan’s goals and preferences! 🚀
