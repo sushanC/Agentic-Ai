@@ -7,6 +7,11 @@ import {
   askAI
 } from "../services/ai.js";
 
+import {
+  getEmbedding,
+  cosineSimilarity
+} from "../services/embeddingService.js";
+
 export async function handleNotes(
   userMessage
 ) {
@@ -66,70 +71,132 @@ export async function handleNotes(
   // search notes
 
   if (
+  userMessage
+    .toLowerCase()
+    .startsWith(
+      "search notes "
+    )
+) {
+
+  const keyword =
     userMessage
-      .toLowerCase()
-      .startsWith(
-        "search notes "
+      .replace(
+        /^search notes /i,
+        ""
       )
-  ) {
+      .trim();
 
-    const keyword =
-      userMessage
-        .replace(
-          /^search notes /i,
-          ""
-        )
-        .trim()
-        .toLowerCase();
+  const notes =
+    await loadNotes();
 
-    const notes =
-      await loadNotes();
-
-    const matches =
-      notes.filter(
-        note =>
-          note.content
-            .toLowerCase()
-            .includes(
-              keyword
-            )
-      );
-
-    if (
-      matches.length === 0
-    ) {
-
-      console.log(
-        "\nAI: No matching notes found.\n"
-      );
-
-      return true;
-    }
-
-    console.log(
-      "\n📚 Matching Notes:\n"
+  const queryEmbedding =
+    await getEmbedding(
+      keyword
     );
 
-    matches.forEach(
-      note => {
+  const scored =
+    notes
+      .filter(
+        note =>
+          note.embedding
+      )
+      .map(note => ({
+        note,
+        score:
+          cosineSimilarity(
+            queryEmbedding,
+            note.embedding
+          )
+      }));
 
-        console.log(
-          `ID: ${note.id}`
-        );
+  scored.sort(
+    (a, b) =>
+      b.score - a.score
+  );
+  console.log(
+  "\nSimilarity Scores:\n"
+);
 
-        console.log(
-          note.content
-        );
+scored.forEach(item => {
 
-        console.log(
-          "\n-------------------\n"
-        );
-      }
+  console.log(
+    item.score.toFixed(3),
+    "-",
+    item.note.content
+  );
+});
+
+const matches =
+  scored
+    .filter(
+      item =>
+        item.score > 0.35
+    )
+    .slice(0, 3);
+
+  if (
+    matches.length === 0
+  ) {
+
+    console.log(
+      "\nAI: No matching notes found.\n"
     );
 
     return true;
   }
 
+  console.log(
+    "\n📚 Matching Notes:\n"
+  );
+
+matches.forEach(item => {
+
+  const note =
+    item.note;
+
+  console.log(
+    `Score: ${item.score.toFixed(3)}`
+  );
+
+  console.log(
+    `ID: ${note.id}`
+  );
+
+  console.log(
+    note.content
+  );
+
+  console.log(
+    "\n-------------------\n"
+  );
+});
+
+if (matches.length === 0) {
+
+  console.log(
+    "\nNo strong match found."
+  );
+
+  console.log(
+    "\nClosest note:\n"
+  );
+
+  const best =
+    scored[0];
+
+  console.log(
+    `Score: ${best.score.toFixed(3)}`
+  );
+
+  console.log(
+    best.note.content
+  );
+
+  return true;
+}
+
+  return true;
+}
   // ask notes
 
   if (
@@ -242,11 +309,16 @@ say "I couldn't find that in your notes."
     const notes =
       await loadNotes();
 
-    notes.push({
-      id: Date.now(),
-      content:
-        noteContent
-    });
+    const embedding =
+  await getEmbedding(
+    noteContent
+  );
+
+notes.push({
+  id: Date.now(),
+  content: noteContent,
+  embedding
+});
 
     await saveNotes(
       notes

@@ -1,6 +1,27 @@
 import axios from "axios";
 import { askAI } from "../services/ai.js";
 
+async function webSearch(query) {
+
+  const response =
+    await axios.post(
+      "https://google.serper.dev/search",
+      {
+        q: query
+      },
+      {
+        headers: {
+          "X-API-KEY":
+            process.env.SERPER_API_KEY,
+          "Content-Type":
+            "application/json"
+        }
+      }
+    );
+
+  return response.data.organic || [];
+}
+
 export async function handleWeb(
   userMessage
 ) {
@@ -30,24 +51,33 @@ export async function handleWeb(
 
   try {
 
-    const response =
-      await axios.get(
-        `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json`
-      );
+    const results =
+      await webSearch(query);
 
-    const webData =
-      response.data
-        .AbstractText ||
-      "No results found.";
+    const context =
+      results
+        .slice(0, 5)
+        .map(
+          r => `
+Title:
+${r.title}
+
+Snippet:
+${r.snippet}
+`
+        )
+        .join("\n\n");
 
     const prompt = `
-Answer using this web information.
-
-Web Data:
-${webData}
+Answer the question using the web results.
 
 Question:
 ${query}
+
+Web Results:
+${context}
+
+Provide a clear answer.
 `;
 
     const answer =
