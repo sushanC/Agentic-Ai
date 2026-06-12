@@ -39,6 +39,10 @@ import {
   askPDF
 } from "./services/pdfQAService.js";
 
+import {
+  routeRequest
+} from "./services/toolRouter.js";
+
 app.use(cors());
 
 app.use(express.json());
@@ -52,10 +56,13 @@ app.post(
       const { message } =
         req.body;
 
-      const reply =
-        await askAI(
-          message
-        );
+const result =
+  await routeRequest(
+    message
+  );
+
+const reply =
+  result.response;
 
       res.json({
         reply
@@ -77,6 +84,10 @@ app.post(
   "/voice",
   async (req, res) => {
 
+    console.log(
+      "VOICE ROUTE HIT"
+    );
+
     try {
 
       const result =
@@ -85,6 +96,10 @@ app.post(
       res.json(result);
 
     } catch (err) {
+
+      console.error(
+        "VOICE ERROR:"
+      );
 
       console.error(err);
 

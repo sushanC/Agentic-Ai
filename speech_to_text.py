@@ -4,13 +4,16 @@ import sys
 audio_file = sys.argv[1]
 
 model = WhisperModel(
-    "base",
-    device="cpu"
+    "small",
+    device="cpu",
+    compute_type="int8"
 )
 
-segments, _ = model.transcribe(
+segments, info = model.transcribe(
     audio_file,
-    language="en"
+    language="en",
+    beam_size=5,
+    vad_filter=True
 )
 
 text = ""

@@ -18,14 +18,14 @@ export async function listen() {
         );
 
       const recording =
-        recorder.record({
+  recorder.record({
 
-          sampleRate: 16000,
+    sampleRate: 16000,
 
-          threshold: 0,
+    threshold: 0.3,
 
-          verbose: false
-        });
+    verbose: false
+  });
 
       recording.stream()
         .pipe(file);
@@ -44,8 +44,14 @@ export async function listen() {
 
             (
               err,
-              stdout
+              stdout,
+              stderr
             ) => {
+                  console.log(
+      "\nRAW WHISPER:\n",
+      stdout
+    );
+
 
               if (err) {
 
@@ -66,7 +72,7 @@ export async function listen() {
 
         },
 
-        5000
+        10000
       );
     }
   );

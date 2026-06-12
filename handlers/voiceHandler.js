@@ -26,7 +26,15 @@ export async function handleVoice() {
   const answer =
     await askAI(text);
 
-  await speak(answer);
+  const cleanAnswer =
+  answer.replace(
+    /\*\*/g,
+    ""
+  );  
+
+  await speak(
+  cleanAnswer
+);
 
   console.log(
   "\n🎧 Saved audio.wav\n"
