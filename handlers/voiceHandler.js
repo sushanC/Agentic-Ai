@@ -10,71 +10,30 @@ import {
   askAI
 } from "../services/ai.js";
 
-export async function handleVoice(
-  userMessage
-) {
+export async function handleVoice() {
 
-  if (
-    userMessage
-      .toLowerCase()
-      .startsWith(
-        "speak "
-      )
-  ) {
+  console.log(
+    "\n🎤 Speak now...\n"
+  );
 
-    const text =
-      userMessage.replace(
-        /^speak /i,
-        ""
-      );
-
-    console.log(
-      "\n🔊 Speaking...\n"
-    );
-
-    await speak(
-      text
-    );
-
-    return true;
-  }
-
-  if (
-  userMessage
-    .toLowerCase() ===
-  "voice mode"
-) {
-
-  const spoken =
+  const text =
     await listen();
 
   console.log(
-    "\nYou Said:"
-  );
-
-  console.log(
-    spoken
+    `\nYou Said:\n${text}`
   );
 
   const answer =
-    await askAI(
-      spoken
-    );
+    await askAI(text);
+
+  await speak(answer);
 
   console.log(
-    "\nAI:"
-  );
+  "\n🎧 Saved audio.wav\n"
+);
 
-  console.log(
+  return {
+    transcript: text,
     answer
-  );
-
-  await speak(
-    answer
-  );
-
-  return true;
-}
-
-  return false;
+  };
 }

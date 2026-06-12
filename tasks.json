@@ -1,114 +1,37 @@
 [
   {
-    "task": "Apply for Internship",
-    "status": "pending"
+    "id": 1,
+    "text": "Apply for Internship",
+    "completed": false
   },
   {
-    "task": "Update Resume",
-    "status": "pending"
+    "id": 2,
+    "text": "Update Resume",
+    "completed": false
   },
   {
-    "task": "Build Portfolio Website",
-    "status": "pending"
+    "id": 3,
+    "text": "Build Portfolio Website",
+    "completed": false
   },
   {
-    "task": "Solve 5 LeetCode Problems",
-    "status": "pending"
+    "id": 4,
+    "text": "Solve 5 LeetCode Problems",
+    "completed": false
   },
   {
-    "task": "Learn React",
-    "status": "completed"
+    "id": 5,
+    "text": "Learn React",
+    "completed": false
   },
   {
-    "task": "Learn Node.js",
-    "status": "pending"
+    "id": 6,
+    "text": "Learn Node.js",
+    "completed": false
   },
   {
-    "task": "Build AI Agent",
-    "status": "pending"
-  },
-  {
-    "task": "Learn Docker",
-    "status": "pending"
-  },
-  {
-    "task": "Learn Kubernetes",
-    "status": "pending"
-  },
-  {
-    "task": "Contribute to Open Source",
-    "status": "pending"
-  },
-  {
-    "task": "Create LinkedIn Profile",
-    "status": "completed"
-  },
-  {
-    "task": "Connect with 5 Recruiters",
-    "status": "pending"
-  },
-  {
-    "task": "Complete DBMS Notes",
-    "status": "pending"
-  },
-  {
-    "task": "Study Operating Systems",
-    "status": "pending"
-  },
-  {
-    "task": "Study Computer Networks",
-    "status": "pending"
-  },
-  {
-    "task": "Learn System Design",
-    "status": "pending"
-  },
-  {
-    "task": "Practice Aptitude Questions",
-    "status": "pending"
-  },
-  {
-    "task": "Read AI Research Paper",
-    "status": "pending"
-  },
-  {
-    "task": "Build Personal Agent v2",
-    "status": "pending"
-  },
-  {
-    "task": "Exercise for 30 Minutes",
-    "status": "completed"
-  },
-  {
-    "task": "Drink 3 Liters Water",
-    "status": "pending"
-  },
-  {
-    "task": "Sleep Before 11 PM",
-    "status": "pending"
-  },
-  {
-    "task": "Go for a Walk",
-    "status": "completed"
-  },
-  {
-    "task": "Play Cricket",
-    "status": "completed"
-  },
-  {
-    "task": "Watch Movie",
-    "status": "completed"
-  },
-  {
-    "task": "Clean Workspace",
-    "status": "pending"
-  },
-  {
-    "task": "Plan Next Week",
-    "status": "pending"
-  },
-  {
-    "task": "Solve 10 LeetCode Problems",
-    "status": "pending"
+    "id": 7,
+    "text": "Build AI Agent",
+    "completed": true
   }
 ]
