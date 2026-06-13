@@ -43,6 +43,14 @@ import {
   routeRequest
 } from "./services/toolRouter.js";
 
+import {
+  updateMemory
+} from "./services/memoryService.js";
+
+import {
+  addMessage
+} from "./services/historyService.js";
+
 app.use(cors());
 
 app.use(express.json());
@@ -53,16 +61,30 @@ app.post(
 
     try {
 
-      const { message } =
-        req.body;
+const { message } =
+  req.body;
+
+  await addMessage(
+  "user",
+  message
+);
+
+await updateMemory(
+  message
+);
 
 const result =
   await routeRequest(
     message
   );
 
-const reply =
-  result.response;
+      const reply =
+        result.answer;
+
+      await addMessage(
+  "assistant",
+  reply
+);  
 
       res.json({
         reply
@@ -79,7 +101,6 @@ const reply =
     }
   }
 );
-
 app.post(
   "/voice",
   async (req, res) => {

@@ -9,6 +9,14 @@ import {
   loadAIMode
 } from "../storage/aiModeStorage.js";
 
+import {
+  loadMemory
+} from "../storage/memoryStorage.js";
+
+import {
+  getRecentHistory
+} from "./historyService.js";
+
 const ai = new GoogleGenAI({
   apiKey: process.env.API_KEY
 });
@@ -89,6 +97,38 @@ export async function askAI(
   prompt
 ) {
 
+  const memory =
+  await loadMemory();
+
+  const history =
+  await getRecentHistory(
+    10
+  );
+
+const memoryPrompt =
+`
+User Profile:
+
+${JSON.stringify(
+  memory,
+  null,
+  2
+)}
+
+Recent Conversation:
+
+${history
+  .map(
+    msg =>
+      `${msg.role}: ${msg.content}`
+  )
+  .join("\n")
+}
+
+Current User Message:
+
+${prompt}
+`;
   const mode =
     await loadAIMode();
 
@@ -113,7 +153,7 @@ export async function askAI(
     );
 
     return await askGroq(
-      prompt
+      memoryPrompt
     );
 
   } catch (err) {
@@ -134,7 +174,7 @@ export async function askAI(
     );
 
     return await askGemini(
-      prompt
+      memoryPrompt
     );
 
   } catch (err) {
@@ -155,7 +195,7 @@ export async function askAI(
     );
 
     return await askOpenRouter(
-      prompt
+      memoryPrompt
     );
 
   } catch (err) {
@@ -178,20 +218,34 @@ export async function extractMemory(
 ) {
 
   const prompt = `
-Extract personal facts from this message.
+Extract personal facts.
 
-Message:
-${userMessage}
+Use clear keys.
+
+Examples:
+
+"My favorite programming language is Java"
+
+{
+  "programming_language": "Java"
+}
+
+"My preferred spoken language is Kannada"
+
+{
+  "spoken_language": "Kannada"
+}
+
+"My favorite color is Green"
+
+{
+  "favorite_color": "Green"
+}
 
 Return JSON only.
 
-Example:
-{
-  "favorite language": "Python"
-}
-
-If nothing important exists:
-{}
+Message:
+${userMessage}
 `;
 
   const response =

@@ -1,9 +1,9 @@
 {
   "name": "Sushan",
   "goal": "Build a personal AI agent",
-  "preferred_language": "Java",
-  "favorite language": "c",
-  "likes": "green and orange",
-  "favorite sport": "Cricket",
-  "favorite color": "green"
+  "spoken_language": "Kannada",
+  "programming_language": "Java",
+  "favorite_sport": "Cricket",
+  "favorite_color": "Green",
+  "query": "Deadlock is a situation in computer science where two or more processes are unable to proceed because each is waiting for the other to release a resource."
 }
