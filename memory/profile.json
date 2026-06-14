@@ -1,9 +1,13 @@
 {
-  "name": "Sushan",
+  "name": "Sushan Acharya",
   "goal": "Build a personal AI agent",
   "spoken_language": "Kannada",
-  "programming_language": "Java",
   "favorite_sport": "Cricket",
   "favorite_color": "Green",
-  "query": "Deadlock is a situation in computer science where two or more processes are unable to proceed because each is waiting for the other to release a resource."
+  "favorite_database": "MongoDB",
+  "long_term_interests": "AI news",
+  "goals": [
+    "learn Kubernetes"
+  ],
+  "favorite_technologies": "VS Code"
 }

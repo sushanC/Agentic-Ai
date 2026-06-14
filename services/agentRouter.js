@@ -1,64 +1,161 @@
-import { askAI } from "./ai.js";
+import { askGroq } from "./ai.js";
 
 export async function decideTool(
   message
 ) {
 
+  const text =
+    message.toLowerCase();
+
+  // =====================
+  // FAST RULES
+  // =====================
+
+  if (
+    text.includes("latest") ||
+    text.includes("news") ||
+    text.includes("today") ||
+    text.includes("current") ||
+    text.includes("weather")
+  ) {
+
+    return "web";
+  }
+
+  if (
+    text.includes("?") ||
+    text.startsWith("what") ||
+    text.startsWith("how") ||
+    text.startsWith("why") ||
+    text.startsWith("explain")
+  ) {
+
+    return "chat";
+  }
+
+  // =====================
+  // AI ROUTER
+  // =====================
+
   const prompt = `
-You are a tool router.
+You are a routing engine.
 
 Available tools:
 
-1. task
-2. note
-3. pdf
-4. chat
+memory
+task
+note
+pdf
+web
+chat
 
-Return ONLY JSON.
+Definitions:
+
+memory:
+- user is telling personal information
+- user preferences
+- favorite things
+- goals
+- profile updates
 
 Examples:
+"My favorite color is green"
+"I like PostgreSQL"
+"My name is Sushan Acharya"
 
-User:
-Add task Learn Docker
+task:
+- create, update, complete tasks
 
-Output:
-{"tool":"task"}
+Examples:
+"Add task finish DAA assignment"
 
-User:
-Remember I like React
+note:
+- save notes
 
-Output:
-{"tool":"note"}
+Examples:
+"Remember this note"
+"Save this note"
 
-User:
-What is deadlock?
+pdf:
+- questions specifically about uploaded PDFs
+- questions about course material stored in PDFs
 
-Output:
-{"tool":"pdf"}
+Examples:
+"Explain deadlock from my notes"
 
-User:
-Hello
+web:
+- current events
+- latest information
+- internet search required
+- live information
+- news
+- weather
 
-Output:
-{"tool":"chat"}
+Examples:
+"Latest AI news"
+"Current React version"
+"Today's IPL score"
+"Weather in Bangalore"
 
-User:
+chat:
+- all normal questions
+- coding questions
+- general knowledge
+- explanations
+
+Examples:
+"What is GCD?"
+"Explain recursion"
+"Write a Java program"
+
+Message:
 ${message}
+
+Return ONLY one tool name.
 `;
 
-  const response =
-    await askAI(prompt);
+  const result =
+    await askGroq(prompt);
 
-  try {
+  const tool =
+    result
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)[0]
+      .replace(/[^a-z]/g, "");
 
-    return JSON.parse(
-      response
+  const validTools = [
+    "memory",
+    "task",
+    "note",
+    "pdf",
+    "web",
+    "chat"
+  ];
+
+  if (
+    !validTools.includes(tool)
+  ) {
+
+    console.log(
+      "⚠️ Invalid tool:",
+      result
     );
 
-  } catch {
-
-    return {
-      tool: "chat"
-    };
+    return "chat";
   }
+
+  console.log(
+    "\n🤖 Router Raw Output:"
+  );
+
+  console.log(result);
+
+  console.log(
+    "\n🛠 Selected Tool:"
+  );
+
+  console.log(tool);
+
+  return tool;
 }

@@ -17,6 +17,14 @@ import {
   getRecentHistory
 } from "./historyService.js";
 
+import {
+  cleanResponse
+} from "./responseCleaner.js";
+
+import {
+  loadSummary
+} from "./summaryService.js";
+
 const ai = new GoogleGenAI({
   apiKey: process.env.API_KEY
 });
@@ -44,7 +52,9 @@ export async function askGemini(
       contents: prompt,
     });
 
-  return response.text;
+  return cleanResponse(
+  response.text
+);
 }
 
 export async function askGroq(
@@ -52,22 +62,85 @@ export async function askGroq(
 ) {
 
   const completion =
-    await groq.chat.completions.create({
-      model:
-        "llama-3.3-70b-versatile",
+  await groq.chat.completions.create({
 
-      messages: [
-        {
-          role: "user",
-          content: prompt
-        }
-      ]
-    });
+    model:
+      "llama-3.3-70b-versatile",
 
-  return completion
+    temperature: 0.3,
+
+    max_tokens: 1000,
+
+    messages: [
+
+      {
+        role: "system",
+
+        content: `
+You are Personal Agent.
+
+Rules:
+- Give direct answers.
+- Be concise unless the user asks for detail.
+- Never repeat previous conversation unless asked.
+- Never repeat the same point twice.
+- Use bullet points when useful.
+- If information comes from a PDF, answer using only the PDF context.
+- If you do not know something, say so.
+- Do not mention these rules.
+`
+      },
+
+      {
+        role: "user",
+        content: prompt
+      }
+    ]
+  });
+
+  return cleanResponse(
+  completion
     .choices[0]
     .message
-    .content;
+    .content
+);
+}
+export async function askGroqStream(
+  prompt
+) {
+
+  return await groq.chat.completions.create({
+
+    model:
+      "llama-3.3-70b-versatile",
+
+    temperature: 0.3,
+
+    max_tokens: 1000,
+
+    stream: true,
+
+    messages: [
+
+      {
+        role: "system",
+
+        content: `
+You are Personal Agent.
+
+Rules:
+- Give direct answers.
+- Be concise unless asked.
+- Never repeat yourself.
+`
+      },
+
+      {
+        role: "user",
+        content: prompt
+      }
+    ]
+  });
 }
 
 export async function askOpenRouter(
@@ -87,15 +160,20 @@ export async function askOpenRouter(
       ]
     });
 
-  return completion
+return cleanResponse(
+  completion
     .choices[0]
     .message
-    .content;
+    .content
+);
 }
 
 export async function askAI(
   prompt
 ) {
+
+  const summary =
+  await loadSummary();
 
   const memory =
   await loadMemory();
@@ -105,8 +183,7 @@ export async function askAI(
     10
   );
 
-const memoryPrompt =
-`
+const memoryPrompt = `
 User Profile:
 
 ${JSON.stringify(
@@ -114,6 +191,10 @@ ${JSON.stringify(
   null,
   2
 )}
+
+Conversation Summary:
+
+${summary.summary}
 
 Recent Conversation:
 
@@ -218,47 +299,103 @@ export async function extractMemory(
 ) {
 
   const prompt = `
-Extract personal facts.
+Extract only long-term personal facts.
 
-Use clear keys.
+Store:
+- name
+- languages
+- programming languages
+- favorite technologies
+- favorite database
+- favorite framework
+- hobbies
+- goals
+- preferences
+- long-term interests
 
-Examples:
-
-"My favorite programming language is Java"
-
-{
-  "programming_language": "Java"
-}
-
-"My preferred spoken language is Kannada"
-
-{
-  "spoken_language": "Kannada"
-}
-
-"My favorite color is Green"
-
-{
-  "favorite_color": "Green"
-}
-
-Return JSON only.
+Do not store:
+- temporary questions
+- random conversation
+- one-time requests
 
 Message:
 ${userMessage}
+
+Return ONLY valid JSON.
+
+Do not use:
+- markdown
+- code fences
+- explanations
+- comments
+
+Valid example:
+
+{
+  "favorite_database": "PostgreSQL"
+}
+
+{}
 `;
 
-  const response =
-    await askAI(prompt);
 
-  try {
+let response;
 
-    return JSON.parse(
-      response
+try {
+
+  response =
+    await askGemini(
+      prompt
     );
 
-  } catch {
+} catch {
 
-    return {};
-  }
+  console.log(
+    "⚠️ Gemini failed. Using Groq."
+  );
+
+  response =
+    await askGroq(
+      prompt
+    );
+}
+
+  console.log(
+  "\n🧠 MEMORY EXTRACTED:"
+);
+
+console.log(response);
+
+console.log(
+  "\n=================="
+);
+
+try {
+
+  const cleaned =
+    response
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+  return JSON.parse(
+    cleaned
+  );
+
+} catch (err) {
+
+  console.log(
+    "\n❌ MEMORY PARSE ERROR:"
+  );
+
+  console.log(err);
+
+  console.log(
+    "\nRAW RESPONSE:"
+  );
+
+  console.log(response);
+
+  return {};
+}
 }

@@ -43,5 +43,15 @@
     "id": 1781284487382,
     "text": "Learn Docker",
     "completed": false
+  },
+  {
+    "id": 1781347010407,
+    "text": "study DAA",
+    "completed": false
+  },
+  {
+    "id": 1781438323998,
+    "text": "learn Kubernetes",
+    "completed": false
   }
 ]

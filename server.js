@@ -48,8 +48,22 @@ import {
 } from "./services/memoryService.js";
 
 import {
+  getRecentHistory,
   addMessage
 } from "./services/historyService.js";
+
+import {
+  askGroqStream
+} from "./services/ai.js";
+
+import {
+  loadMemory,
+  saveMemory
+} from "./storage/memoryStorage.js";
+
+import {
+  loadHistory
+} from "./storage/chatHistoryStorage.js";
 
 app.use(cors());
 
@@ -64,7 +78,7 @@ app.post(
 const { message } =
   req.body;
 
-  await addMessage(
+await addMessage(
   "user",
   message
 );
@@ -78,18 +92,17 @@ const result =
     message
   );
 
-      const reply =
-        result.answer;
+const reply =
+  result.answer;
 
-      await addMessage(
+await addMessage(
   "assistant",
   reply
-);  
+);
 
-      res.json({
-        reply
-      });
-
+res.json({
+  reply
+});
     } catch (err) {
 
       console.error(err);
@@ -369,6 +382,192 @@ const answer =
       res.status(500).json({
         error:
           err.message
+      });
+    }
+  }
+);
+
+app.post(
+  "/chat/stream",
+
+  async (req, res) => {
+
+    try {
+
+      const {
+        message
+      } = req.body;
+      await updateMemory(
+  message
+);
+
+      const result =
+  await routeRequest(
+    message
+  );
+
+if (
+  result.tool !==
+  "chat"
+) {
+
+  await addMessage(
+    "user",
+    message
+  );
+  
+
+  await addMessage(
+    "assistant",
+    result.answer
+  );
+
+  res.setHeader(
+    "Content-Type",
+    "text/plain"
+  );
+
+  res.setHeader(
+    "Transfer-Encoding",
+    "chunked"
+  );
+
+  res.write(
+    result.answer
+  );
+
+  return res.end();
+}
+
+      await updateMemory(
+        message
+      );
+
+      res.setHeader(
+        "Content-Type",
+        "text/plain"
+      );
+
+      res.setHeader(
+        "Transfer-Encoding",
+        "chunked"
+      );
+
+      await addMessage(
+        "user",
+        message
+      );
+      const memory =
+  await loadMemory();
+
+const history =
+  await getRecentHistory(10);
+
+const fullPrompt = `
+User Profile:
+
+${JSON.stringify(memory, null, 2)}
+
+Recent Conversation:
+
+${history
+  .map(
+    msg =>
+      `${msg.role}: ${msg.content}`
+  )
+  .join("\n")
+}
+
+Current User Message:
+
+${message}
+
+You are Personal Agent.
+
+Rules:
+- Use the User Profile when answering questions about the user.
+- If the answer exists in the profile, use it confidently.
+- Do not say you don't know if the information is in the profile.
+- Be concise.
+- Use recent conversation when relevant.
+`;
+console.log(
+  "\n🧠 MEMORY:"
+);
+
+console.log(memory);
+
+console.log(
+  "\n💬 USER:"
+);
+
+console.log(message);
+
+      const stream =
+  await askGroqStream(
+    fullPrompt
+  );
+
+      let fullResponse =
+        "";
+
+      for await (
+        const chunk of stream
+      ) {
+
+        const content =
+          chunk
+            .choices?.[0]
+            ?.delta
+            ?.content;
+
+        if (content) {
+
+          fullResponse +=
+            content;
+
+          res.write(
+            content
+          );
+        }
+      }
+
+      await addMessage(
+        "assistant",
+        fullResponse
+      );
+
+      res.end();
+
+    } catch (err) {
+
+      console.error(
+        err
+      );
+
+      res.status(500).end();
+    }
+  }
+);
+
+app.get(
+  "/history",
+  async (req, res) => {
+
+    try {
+
+      const history =
+        await loadHistory();
+
+      res.json(history);
+
+    } catch (err) {
+
+      console.error(err);
+
+      res.status(500).json({
+        error:
+          "Failed to load history"
       });
     }
   }

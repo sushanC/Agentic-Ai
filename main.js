@@ -48,6 +48,10 @@ import {
   handleVoice
 } from "./handlers/voiceHandler.js";
 
+import {
+  updateSummary
+} from "./summaryService.js";
+
 // =====================
 // Readline Helper
 // =====================
@@ -192,9 +196,20 @@ async function main() {
       );
     }
 
+    const recentHistory =
+  history
+    .slice(-6)
+    .map(
+      msg =>
+        `${msg.role}: ${msg.content}`
+    )
+    .join("\n");
+
     // =====================
     // Normal Chat
     // =====================
+
+    
 
     const prompt = `
 You are a personal AI assistant.
@@ -203,11 +218,7 @@ User Profile:
 ${JSON.stringify(profile, null, 2)}
 
 Recent Conversation:
-${JSON.stringify(
-  history.slice(-10),
-  null,
-  2
-)}
+${recentHistory}
 
 Current User Message:
 ${userMessage}
@@ -216,6 +227,17 @@ Answer naturally and use memory when relevant.
 `;
 
     try {
+      console.log(
+  "\n===== HISTORY SENT =====\n"
+);
+
+console.log(
+  recentHistory
+);
+
+console.log(
+  "\n========================\n"
+);
 
       const responseText =
         await askAI(
@@ -240,9 +262,27 @@ Answer naturally and use memory when relevant.
           responseText
       });
 
-      await saveHistory(
-        history
-      );
+      if (
+  history.length > 50
+) {
+
+  console.log(
+    "\n📝 Creating summary..."
+  );
+
+  await updateSummary(
+    history
+  );
+
+  history.splice(
+    0,
+    history.length - 10
+  );
+
+  await saveHistory(
+    history
+  );
+}
 
     } catch (err) {
 

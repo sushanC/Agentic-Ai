@@ -28,6 +28,10 @@ import {
   deleteMemoryKey
 } from "../storage/memoryStorage.js";
 
+import {
+  handleWeb
+} from "../handlers/webHandler.js";
+
 async function findBestPDF(
   question
 ) {
@@ -59,12 +63,46 @@ export async function routeRequest(
   message
 ) {
 
-    const text =
-    message.toLowerCase();
+  const text =
+  message.toLowerCase();
+
+const aiTool =
+  await decideTool(
+    message
+  );
+
+  if (
+  aiTool === "web"
+) {
+
+  console.log(
+    "\n🌐 WEB TOOL TRIGGERED"
+  );
+
+  const answer =
+    await handleWeb(
+      `web search ${message}`
+    );
+
+  return {
+    tool: "web",
+    answer
+  };
+}
+
+console.log(
+  "\n🤖 AI Router:"
+);
+
+console.log(
+  aiTool
+);
 
   if (
   text === "show memory"
 ) {
+
+  
 
   const memory =
     await loadMemory();

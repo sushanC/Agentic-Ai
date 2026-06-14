@@ -11,10 +11,27 @@ export async function updateMemory(
   userMessage
 ) {
 
-  const facts =
+let facts = {};
+
+try {
+
+  facts =
     await extractMemory(
       userMessage
     );
+
+} catch (err) {
+
+  console.log(
+    "\n⚠️ Memory extraction skipped."
+  );
+
+  console.log(
+    err.message
+  );
+
+  return;
+}
 
   if (
     Object.keys(facts)

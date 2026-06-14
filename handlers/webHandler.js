@@ -34,7 +34,7 @@ export async function handleWeb(
       )
   ) {
 
-    return false;
+    return null;
   }
 
   const query =
@@ -45,9 +45,11 @@ export async function handleWeb(
       )
       .trim();
 
-  console.log(
-    "\n🔍 Searching web...\n"
-  );
+      console.log(
+  "\n🔍 SERPER SEARCH:"
+);
+
+console.log(query);
 
   try {
 
@@ -83,26 +85,14 @@ Provide a clear answer.
     const answer =
       await askAI(prompt);
 
-    console.log(
-      "\n🌐 Web Answer:\n"
-    );
-
-    console.log(
-      answer
-    );
-
-    console.log();
+    return answer;
 
   } catch (err) {
-
-    console.log(
-      "\nAI: Web search failed.\n"
-    );
 
     console.error(
       err.message
     );
-  }
 
-  return true;
+    return "Web search failed.";
+  }
 }
