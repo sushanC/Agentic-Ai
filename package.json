@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "author": "Sushan Achar",
   "license": "ISC",
@@ -23,5 +24,13 @@
     "pdf-poppler": "^0.2.3",
     "pdfjs-dist": "^6.0.227",
     "tesseract.js": "^7.0.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sushanC/Agentic-Ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sushanC/Agentic-Ai/issues"
+  },
+  "homepage": "https://github.com/sushanC/Agentic-Ai#readme"
 }
