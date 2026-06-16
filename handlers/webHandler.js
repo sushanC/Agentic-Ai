@@ -82,8 +82,11 @@ ${context}
 Provide a clear answer.
 `;
 
-    const answer =
-      await askAI(prompt);
+const answer =
+  await askAI(
+    prompt,
+    "web"
+  );
 
     return answer;
 

@@ -25,6 +25,10 @@ import {
   loadSummary
 } from "./summaryService.js";
 
+import {
+  decideModel
+} from "./modelRouter.js";
+
 const ai = new GoogleGenAI({
   apiKey: process.env.API_KEY
 });
@@ -147,6 +151,7 @@ export async function askOpenRouter(
   prompt
 ) {
 
+
   const completion =
     await openrouter.chat.completions.create({
       model:
@@ -168,22 +173,78 @@ return cleanResponse(
 );
 }
 
-export async function askAI(
+export async function askDeepSeek(
   prompt
 ) {
 
-  const summary =
-  await loadSummary();
+  const completion =
+    await openrouter.chat.completions.create({
 
-  const memory =
-  await loadMemory();
+      model:
+        "deepseek/deepseek-chat",
 
-  const history =
-  await getRecentHistory(
-    10
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    });
+
+  return completion
+    .choices[0]
+    .message
+    .content;
+}
+
+export async function askAI(
+  prompt,
+  tool = "chat"
+) {
+
+  const model =
+    decideModel(
+      prompt,
+      tool
+    );
+
+  console.log(
+    "\nDEBUG askAI:"
   );
 
-const memoryPrompt = `
+  console.log({
+    prompt,
+    tool
+  });
+
+  console.log(
+    "\n🧠 MODEL:"
+  );
+
+  console.log(
+    model
+  );
+
+  console.log(
+    "\n🤖 MODEL SELECTED:"
+  );
+
+  console.log(
+    model
+  );
+
+  const summary =
+    await loadSummary();
+
+  const memory =
+    await loadMemory();
+
+  const history =
+    await getRecentHistory(
+      10
+    );
+
+  const memoryPrompt = `
 User Profile:
 
 ${JSON.stringify(
@@ -194,7 +255,7 @@ ${JSON.stringify(
 
 Conversation Summary:
 
-${summary.summary}
+${summary?.summary || ""}
 
 Recent Conversation:
 
@@ -210,89 +271,104 @@ Current User Message:
 
 ${prompt}
 `;
-  const mode =
-    await loadAIMode();
-
-  if (
-    mode.provider ===
-    "ollama"
-  ) {
-
-    console.log(
-      "🟢 Using Ollama..."
-    );
-
-    return await askOllama(
-      prompt
-    );
-  }
 
   try {
 
-    console.log(
-      "🟢 Using Groq..."
-    );
+    if (
+      model === "groq"
+    ) {
 
-    return await askGroq(
-      memoryPrompt
+      console.log(
+        "🟢 Using Groq..."
+      );
+
+      return await askGroq(
+        memoryPrompt
+      );
+    }
+
+    if (
+      model === "openrouter"
+    ) {
+
+      console.log(
+        "🔵 Using OpenRouter..."
+      );
+
+      return await askOpenRouter(
+        memoryPrompt
+      );
+    }
+
+    if (
+      model === "gemini"
+    ) {
+
+      console.log(
+        "🟡 Using Gemini..."
+      );
+
+      return await askGemini(
+        memoryPrompt
+      );
+    }
+
+    if (
+      model === "ollama"
+    ) {
+
+      console.log(
+        "⚪ Using Ollama..."
+      );
+
+      return await askOllama(
+        memoryPrompt
+      );
+    }
+    if (
+  model === "deepseek"
+){
+
+  console.log(
+  "🟣 Using DeepSeek..."
+);
+
+return await askDeepSeek(
+  memoryPrompt
+);
+}
+
+    throw new Error(
+      `Unknown model: ${model}`
     );
 
   } catch (err) {
 
-    console.log(
-      "🔴 Groq failed."
+    console.error(
+      "\n❌ Model Error:"
     );
 
     console.error(
       err.message
     );
+
+    console.log(
+      "\n🔄 Falling back to Groq..."
+    );
+
+    try {
+
+      return await askGroq(
+        memoryPrompt
+      );
+
+    } catch {
+
+      throw new Error(
+        "All AI providers failed."
+      );
+    }
   }
-
-  try {
-
-    console.log(
-      "🟡 Using Gemini..."
-    );
-
-    return await askGemini(
-      memoryPrompt
-    );
-
-  } catch (err) {
-
-    console.log(
-      "🔴 Gemini failed."
-    );
-
-    console.error(
-      err.message
-    );
-  }
-
-  try {
-
-    console.log(
-      "🔵 Using OpenRouter..."
-    );
-
-    return await askOpenRouter(
-      memoryPrompt
-    );
-
-  } catch (err) {
-
-    console.log(
-      "🔴 OpenRouter failed."
-    );
-
-    console.error(
-      err.message
-    );
-  }
-
-  throw new Error(
-    "All AI providers failed."
-  );
 }
 export async function extractMemory(
   userMessage

@@ -9,5 +9,9 @@
   "goals": [
     "learn Kubernetes"
   ],
-  "favorite_technologies": "VS Code"
+  "favorite_technologies": "VS Code",
+  "long-term_interests": "Kubernetes",
+  "preferences": {
+    "favorite_color": "green"
+  }
 }
