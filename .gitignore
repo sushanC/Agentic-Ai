@@ -1,2 +1,15 @@
-node_modules
+# Memory
+memory/
+
+# Agent storage
+notes.json
+tasks.json
+pdf_memory.json
+
+# Uploads
+uploads/
+
+# Environment
 .env
+
+node_modules/

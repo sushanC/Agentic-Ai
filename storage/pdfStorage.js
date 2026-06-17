@@ -31,3 +31,16 @@ export async function savePDFMemory(
     )
   );
 }
+export async function deletePDF(
+  pdfName
+) {
+
+  const memory =
+    await loadPDFMemory();
+
+  delete memory[pdfName];
+
+  await savePDFMemory(
+    memory
+  );
+}

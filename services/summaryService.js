@@ -1,71 +1,89 @@
-import fs from "fs/promises";
-import { askGroq } from "./ai.js";
+import {
+  loadHistory,
+  saveHistory
+}
+from "../storage/chatHistoryStorage.js";
 
-export async function loadSummary() {
+import {
+  loadSummary,
+  saveSummary
+}
+from "../storage/summaryStorage.js";
 
-  try {
+import {
+  askGroq
+} from "./ai.js";
 
-    const data =
-      await fs.readFile(
-        "./memory/summary.json",
-        "utf-8"
-      );
+export async function updateSummary() {
 
-    return JSON.parse(data);
+  const history =
+    await loadHistory();
 
-  } catch {
+  if (
+    history.length < 50
+  ) {
 
-    return {
-      summary: ""
-    };
+    return;
   }
-}
 
-export async function saveSummary(
-  summary
-) {
-
-  await fs.writeFile(
-    "./memory/summary.json",
-    JSON.stringify(
-      { summary },
-      null,
-      2
-    )
+const oldMessages =
+  history.slice(
+    -100
   );
-}
-
-export async function updateSummary(
-  history
-) {
-
-  const oldMessages =
-    history.slice(0, 40);
 
   const prompt = `
-Summarize the following conversation.
+Create a concise summary.
 
-Focus on:
+Include:
 - user goals
-- projects
 - preferences
-- important facts
+- projects
+- ongoing work
+- important context
 
-Keep under 15 bullet points.
+Conversation:
 
-${JSON.stringify(
-  oldMessages,
-  null,
-  2
-)}
+${oldMessages
+  .map(
+    m =>
+      `${m.role}: ${m.content}`
+  )
+  .join("\n")}
 `;
 
-  const summary =
-    await askGroq(prompt);
+let summary;
 
-  await saveSummary(
-    summary
+try {
+
+  summary =
+    await askGroq(
+      prompt
+    );
+
+} catch (err) {
+
+  console.log(
+    "⚠️ Summary generation failed"
   );
 
-  return summary;
+  console.log(
+    err.message
+  );
+
+  return;
+}
+
+  await saveSummary({
+
+    summary
+  });
+  
+
+  await saveHistory(
+    history.slice(-20)
+  );
+
+  console.log(
+    "\n📝 SUMMARY UPDATED"
+  );
 }

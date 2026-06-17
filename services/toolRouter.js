@@ -32,6 +32,11 @@ import {
   handleWeb
 } from "../handlers/webHandler.js";
 
+import { planActions } from "./actionPlanner.js";
+import { executeActions } from "./actionExecutor.js";
+
+// helper function
+
 async function findBestPDF(
   question
 ) {
@@ -57,6 +62,44 @@ async function findBestPDF(
   return pdfNames[0];
 }
 
+function isAgentRequest(
+  text
+) {
+
+  console.log(
+    "\n🤖 AGENT CHECK:"
+  );
+
+  console.log(text);
+
+  return (
+
+    text.includes(
+      "and create"
+    ) ||
+
+    text.includes(
+      "and save"
+    ) ||
+
+    text.includes(
+      "create tasks"
+    ) ||
+
+    text.includes(
+      "save as notes"
+    ) ||
+
+    text.includes(
+      "find and save"
+    ) ||
+
+    text.includes(
+      "research"
+    )
+  );
+}
+
 
 
 export async function routeRequest(
@@ -64,12 +107,55 @@ export async function routeRequest(
 ) {
 
   const text =
-  message.toLowerCase();
+    message.toLowerCase();
 
-const aiTool =
-  await decideTool(
-    message
-  );
+  // AGENT MODE
+
+  if (
+    isAgentRequest(text)
+  ) {
+
+    console.log(
+      "\n🚀 AGENT MODE"
+    );
+
+    const plan =
+      await planActions(
+        message
+      );
+
+    console.log(
+      "\n📋 PLAN:"
+    );
+
+    console.log(
+      JSON.stringify(
+        plan,
+        null,
+        2
+      )
+    );
+
+    const result =
+      await executeActions(
+        plan
+      );
+
+    return {
+
+      tool: "agent",
+
+      answer:
+        result.join("\n")
+    };
+  }
+
+  // NORMAL ROUTER
+
+  const aiTool =
+    await decideTool(
+      message
+    );
 
   if (
   aiTool === "web"

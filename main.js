@@ -263,7 +263,7 @@ console.log(
       });
 
       if (
-  history.length > 50
+  history.length % 50 !== 0
 ) {
 
   console.log(

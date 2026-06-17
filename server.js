@@ -15,6 +15,10 @@ import {
   saveTasks
 } from "./storage/tasksStorage.js";
 
+import {
+  updateSummary
+} from "./services/summaryService.js";
+
 const app = express();
 const upload =
   multer({
@@ -32,8 +36,10 @@ import {
 
 import {
   loadPDFMemory,
-  savePDFMemory
-} from "./storage/pdfStorage.js";
+  savePDFMemory,
+  deletePDF
+}
+from "./storage/pdfStorage.js";
 
 import {
   askPDF
@@ -58,12 +64,18 @@ import {
 
 import {
   loadMemory,
-  saveMemory
+  saveMemory,
+  deleteMemoryKey
 } from "./storage/memoryStorage.js";
 
 import {
   loadHistory
 } from "./storage/chatHistoryStorage.js";
+
+import {
+  getActivities
+}
+from "./storage/activityStorage.js";
 
 app.use(cors());
 
@@ -99,6 +111,7 @@ await addMessage(
   "assistant",
   reply
 );
+await updateSummary();
 
 res.json({
   reply
@@ -537,6 +550,8 @@ console.log(message);
         fullResponse
       );
 
+      await updateSummary();
+
       res.end();
 
     } catch (err) {
@@ -572,6 +587,189 @@ app.get(
     }
   }
 );
+
+app.get(
+  "/activities",
+  (
+    req,
+    res
+  ) => {
+
+    res.json(
+      getActivities()
+    );
+  }
+);
+
+app.get(
+  "/memory",
+  async (req, res) => {
+
+    try {
+
+      const memory =
+        await loadMemory();
+
+      const facts =
+        Object.entries(memory)
+          .map(
+            ([key, value]) => ({
+              id: key,
+              text:
+                Array.isArray(value)
+                  ? value.join(", ")
+                  : String(value),
+              category: key
+            })
+          );
+
+      res.json(facts);
+
+    } catch (err) {
+
+      console.error(err);
+
+      res.status(500).json({
+        error:
+          "Failed to load memory"
+      });
+    }
+  }
+);
+
+app.delete(
+  "/tasks/:id",
+  async (req, res) => {
+
+    const tasks =
+      await loadTasks();
+
+    const updated =
+      tasks.filter(
+        task =>
+          task.id !==
+          Number(req.params.id)
+      );
+
+    await saveTasks(
+      updated
+    );
+
+    res.json({
+      success: true
+    });
+  }
+);
+
+app.delete(
+  "/memory/:key",
+  async (req, res) => {
+
+    try {
+
+      await deleteMemoryKey(
+        req.params.key
+      );
+
+      res.json({
+        success: true
+      });
+
+    } catch (err) {
+
+      console.error(err);
+
+      res.status(500).json({
+        error:
+          "Failed to delete memory"
+      });
+    }
+  }
+);
+
+app.delete(
+  "/notes/:id",
+  async (req, res) => {
+
+    const notes =
+      await loadNotes();
+
+    const updated =
+      notes.filter(
+        note =>
+          note.id !==
+          Number(req.params.id)
+      );
+
+    await saveNotes(
+      updated
+    );
+
+    res.json({
+      success: true
+    });
+  }
+);
+
+app.put(
+  "/notes/:id",
+  async (req, res) => {
+
+    const { content } =
+      req.body;
+
+    const notes =
+      await loadNotes();
+
+    const note =
+      notes.find(
+        n =>
+          n.id ===
+          Number(req.params.id)
+      );
+
+    if (note) {
+
+      note.content =
+        content;
+    }
+
+    await saveNotes(
+      notes
+    );
+
+    res.json({
+      success: true
+    });
+  }
+);
+
+app.delete(
+  "/pdf/:name",
+  async (req, res) => {
+
+    try {
+
+      await deletePDF(
+        req.params.name
+      );
+
+      res.json({
+        success: true
+      });
+
+    } catch (err) {
+
+      console.error(err);
+
+      res.status(500).json({
+        error:
+          "Failed to delete PDF"
+      });
+    }
+  }
+);
+
 app.listen(
   3001,
   () => {

@@ -7,31 +7,35 @@ import {
   extractMemory
 } from "./ai.js";
 
+import {
+  normalizeMemory
+} from "./memoryNormalizer.js";
+
 export async function updateMemory(
   userMessage
 ) {
 
-let facts = {};
+  let facts = {};
 
-try {
+  try {
 
-  facts =
-    await extractMemory(
-      userMessage
+    facts =
+      await extractMemory(
+        userMessage
+      );
+
+  } catch (err) {
+
+    console.log(
+      "\n⚠️ Memory extraction skipped."
     );
 
-} catch (err) {
+    console.log(
+      err.message
+    );
 
-  console.log(
-    "\n⚠️ Memory extraction skipped."
-  );
-
-  console.log(
-    err.message
-  );
-
-  return;
-}
+    return;
+  }
 
   if (
     Object.keys(facts)
@@ -44,13 +48,20 @@ try {
   const memory =
     await loadMemory();
 
-  Object.assign(
-    memory,
-    facts
-  );
+  const merged = {
+
+    ...memory,
+
+    ...facts
+  };
+
+  const cleaned =
+    normalizeMemory(
+      merged
+    );
 
   await saveMemory(
-    memory
+    cleaned
   );
 
   console.log(
@@ -58,6 +69,6 @@ try {
   );
 
   console.log(
-    memory
+    cleaned
   );
 }

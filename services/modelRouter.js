@@ -7,12 +7,11 @@ export function decideModel(
     String(message)
       .toLowerCase();
 
-  // PDF
+  // PDF RAG
 
   if (
     tool === "pdf"
   ) {
-
     return "groq";
   }
 
@@ -21,11 +20,10 @@ export function decideModel(
   if (
     tool === "web"
   ) {
-
     return "openrouter";
   }
 
-  // Coding
+  // Code Generation
 
   if (
 
@@ -41,7 +39,9 @@ export function decideModel(
 
     text.includes("react") ||
 
-    text.includes("node")
+    text.includes("node") ||
+
+    text.includes("sql")
   ) {
 
     return "deepseek";
@@ -51,15 +51,15 @@ export function decideModel(
 
   if (
 
-    text.includes("equation") ||
-
-    text.includes("solve") ||
-
     text.includes("gcd") ||
 
     text.includes("lcm") ||
 
-    text.includes("factorial")
+    text.includes("equation") ||
+
+    text.includes("factorial") ||
+
+    text.includes("prime")
   ) {
 
     return "groq";
@@ -77,13 +77,13 @@ export function decideModel(
 
     text.includes("advantages") ||
 
-    text.includes("disadvantages")
+    text.includes("disadvantages") ||
+
+    text.includes("difference between")
   ) {
 
     return "openrouter";
   }
-
-  // Default
 
   return "groq";
 }

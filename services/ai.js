@@ -6,10 +6,6 @@ import {
 } from "./ollamaService.js";
 
 import {
-  loadAIMode
-} from "../storage/aiModeStorage.js";
-
-import {
   loadMemory
 } from "../storage/memoryStorage.js";
 
@@ -23,7 +19,7 @@ import {
 
 import {
   loadSummary
-} from "./summaryService.js";
+} from "../storage/summaryStorage.js";
 
 import {
   decideModel
@@ -191,10 +187,12 @@ export async function askDeepSeek(
       ]
     });
 
-  return completion
-    .choices[0]
-    .message
-    .content;
+  return cleanResponse(
+    completion
+      .choices[0]
+      .message
+      .content
+  );
 }
 
 export async function askAI(
@@ -209,32 +207,27 @@ export async function askAI(
     );
 
   console.log(
-    "\nDEBUG askAI:"
+    "\n━━━━━━━━━━━━━━━━━━"
   );
 
-  console.log({
-    prompt,
+  console.log(
+    "🛠 TOOL:",
     tool
-  });
-
-  console.log(
-    "\n🧠 MODEL:"
   );
 
   console.log(
+    "🤖 MODEL:",
     model
   );
 
   console.log(
-    "\n🤖 MODEL SELECTED:"
-  );
-
-  console.log(
-    model
+    "━━━━━━━━━━━━━━━━━━\n"
   );
 
   const summary =
     await loadSummary();
+
+    
 
   const memory =
     await loadMemory();
@@ -301,6 +294,19 @@ ${prompt}
     }
 
     if (
+      model === "deepseek"
+    ) {
+
+      console.log(
+        "🟣 Using DeepSeek..."
+      );
+
+      return await askDeepSeek(
+        memoryPrompt
+      );
+    }
+
+    if (
       model === "gemini"
     ) {
 
@@ -325,18 +331,6 @@ ${prompt}
         memoryPrompt
       );
     }
-    if (
-  model === "deepseek"
-){
-
-  console.log(
-  "🟣 Using DeepSeek..."
-);
-
-return await askDeepSeek(
-  memoryPrompt
-);
-}
 
     throw new Error(
       `Unknown model: ${model}`
@@ -356,18 +350,9 @@ return await askDeepSeek(
       "\n🔄 Falling back to Groq..."
     );
 
-    try {
-
-      return await askGroq(
-        memoryPrompt
-      );
-
-    } catch {
-
-      throw new Error(
-        "All AI providers failed."
-      );
-    }
+    return await askGroq(
+      memoryPrompt
+    );
   }
 }
 export async function extractMemory(
