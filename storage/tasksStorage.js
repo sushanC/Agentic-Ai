@@ -1,5 +1,20 @@
 import fs from "fs/promises";
 
+import {
+  getStoragePath
+}
+from "./storagePath.js";
+
+const TASKS_FILE =
+  getStoragePath(
+    "tasks.json"
+  );
+
+console.log(
+  "📁 TASKS FILE:",
+  TASKS_FILE
+);
+
 export async function loadTasks() {
 
   try {
