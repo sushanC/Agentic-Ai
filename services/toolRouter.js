@@ -34,6 +34,9 @@ import {
 
 import { planActions } from "./actionPlanner.js";
 import { executeActions } from "./actionExecutor.js";
+import {
+  updateMemory
+} from "./memoryService.js";
 
 // helper function
 
@@ -251,43 +254,24 @@ console.log(
   // NOTE TOOL
 
   if (
-    text.startsWith(
-      "remember"
-    )
-  ) {
+  text.startsWith("remember")
+) {
 
-    const noteText =
-      message
-        .replace(
-          /remember/i,
-          ""
-        )
-        .trim();
+  const memoryText =
+    message
+      .replace(/remember/i, "")
+      .trim();
 
-    const notes =
-      await loadNotes();
+  await updateMemory(
+    memoryText
+  );
 
-    notes.push({
-
-      id: Date.now(),
-
-      content:
-        noteText
-    });
-
-    await saveNotes(
-      notes
-    );
-
-    return {
-
-      tool: "note",
-
-      answer:
-        `📝 Note saved: ${noteText}`
-    };
-  }
-
+  return {
+    tool: "memory",
+    answer:
+      `🧠 Memory updated: ${memoryText}`
+  };
+}
   if (
   text.includes(
     "deadlock"

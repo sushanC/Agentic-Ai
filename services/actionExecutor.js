@@ -37,6 +37,13 @@ export async function executeActions(
   plan
 ) {
 
+  if (!plan.actions) {
+
+  return [
+    "❌ Invalid plan format"
+  ];
+}
+
   const results = [];
 
   console.log(

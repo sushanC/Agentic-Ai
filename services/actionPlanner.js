@@ -31,6 +31,19 @@ ${message}
 
 Return ONLY valid JSON.
 
+The JSON MUST always follow this schema:
+
+{
+  "actions": [
+    {
+      "tool": "tool_name",
+      "input": "input_text"
+    }
+  ]
+}
+Even if there is only ONE action,
+it must still be inside the actions array.
+
 If the user says:
 
 Research X
@@ -38,8 +51,12 @@ Research X
 Use:
 
 {
-  "tool":"research",
-  "input":"X"
+  "actions": [
+    {
+      "tool":"research",
+      "input":"X"
+    }
+  ]
 }
 
 Example:
@@ -83,9 +100,17 @@ const cleaned =
     .replace(/```/g, "")
     .trim();
 
-return JSON.parse(
-  cleaned
-);
+const plan =
+  JSON.parse(cleaned);
+
+if (!plan.actions) {
+
+  return {
+    actions: [plan]
+  };
+}
+
+return plan;
 
 }catch (err) {
 

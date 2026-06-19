@@ -1,16 +1,28 @@
 import fs from "fs/promises";
 
+import {
+  getStoragePath
+}
+from "./storagePath.js";
+
+const NOTES_FILE =
+  getStoragePath(
+    "notes.json"
+  );
+
 export async function loadNotes() {
 
   try {
 
     const data =
       await fs.readFile(
-        "./notes.json",
+        NOTES_FILE,
         "utf-8"
       );
 
-    return JSON.parse(data);
+    return JSON.parse(
+      data
+    );
 
   } catch {
 
@@ -23,7 +35,7 @@ export async function saveNotes(
 ) {
 
   await fs.writeFile(
-    "./notes.json",
+    NOTES_FILE,
     JSON.stringify(
       notes,
       null,

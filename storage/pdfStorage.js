@@ -1,16 +1,28 @@
 import fs from "fs/promises";
 
+import {
+  getStoragePath
+}
+from "./storagePath.js";
+
+const PDF_MEMORY_FILE =
+  getStoragePath(
+    "pdf_memory.json"
+  );
+
 export async function loadPDFMemory() {
 
   try {
 
     const data =
       await fs.readFile(
-        "./pdf_memory.json",
+        PDF_MEMORY_FILE,
         "utf-8"
       );
 
-    return JSON.parse(data);
+    return JSON.parse(
+      data
+    );
 
   } catch {
 
@@ -23,7 +35,7 @@ export async function savePDFMemory(
 ) {
 
   await fs.writeFile(
-    "./pdf_memory.json",
+    PDF_MEMORY_FILE,
     JSON.stringify(
       memory,
       null,
@@ -31,6 +43,7 @@ export async function savePDFMemory(
     )
   );
 }
+
 export async function deletePDF(
   pdfName
 ) {

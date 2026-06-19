@@ -1,16 +1,28 @@
 import fs from "fs/promises";
 
+import {
+  getStoragePath
+}
+from "./storagePath.js";
+
+const HISTORY_FILE =
+  getStoragePath(
+    "chat_history.json"
+  );
+
 export async function loadHistory() {
 
   try {
 
     const data =
       await fs.readFile(
-        "./memory/chat_history.json",
+        HISTORY_FILE,
         "utf-8"
       );
 
-    return JSON.parse(data);
+    return JSON.parse(
+      data
+    );
 
   } catch {
 
@@ -22,12 +34,12 @@ export async function saveHistory(
   history
 ) {
 
-    await fs.writeFile(
-      "./memory/chat_history.json",
-      JSON.stringify(
-        history,
-        null,
-        2
-      )
-    );
+  await fs.writeFile(
+    HISTORY_FILE,
+    JSON.stringify(
+      history,
+      null,
+      2
+    )
+  );
 }
