@@ -77,6 +77,12 @@ import {
 }
 from "./storage/activityStorage.js";
 
+import {
+  loadSettings,
+  saveSettings
+}
+from "./storage/settingsStorage.js";
+
 app.use(cors());
 
 app.use(express.json());
@@ -767,6 +773,39 @@ app.delete(
           "Failed to delete PDF"
       });
     }
+  }
+);
+
+app.get(
+  "/settings",
+  async (
+    req,
+    res
+  ) => {
+
+    const settings =
+      await loadSettings();
+
+    res.json(
+      settings
+    );
+  }
+);
+
+app.post(
+  "/settings",
+  async (
+    req,
+    res
+  ) => {
+
+    await saveSettings(
+      req.body
+    );
+
+    res.json({
+      success: true
+    });
   }
 );
 
