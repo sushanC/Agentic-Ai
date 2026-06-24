@@ -29,6 +29,11 @@ const ai = new GoogleGenAI({
   apiKey: process.env.API_KEY
 });
 
+import {
+  loadSettings
+}
+from "../storage/settingsStorage.js";
+
 const groq = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: "https://api.groq.com/openai/v1"
@@ -200,11 +205,28 @@ export async function askAI(
   tool = "chat"
 ) {
 
-  const model =
+  const settings =
+  await loadSettings();
+
+let model;
+
+if (
+  settings.model &&
+  settings.model !== "auto"
+) {
+
+  model =
+    settings.model
+      .toLowerCase();
+
+} else {
+
+  model =
     decideModel(
       prompt,
       tool
     );
+}
 
   console.log(
     "\n━━━━━━━━━━━━━━━━━━"

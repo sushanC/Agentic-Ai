@@ -12,18 +12,36 @@ export function decideModel(
   if (
     tool === "pdf"
   ) {
-    return "groq";
+    return "gemini";
   }
 
-  // Web Search
+  // Research
 
   if (
     tool === "web"
   ) {
+    return "gemini";
+  }
+
+  // Planning
+
+  if (
+
+    text.includes("plan") ||
+
+    text.includes("roadmap") ||
+
+    text.includes("strategy") ||
+
+    text.includes("research and save") ||
+
+    text.includes("analyze")
+  ) {
+
     return "openrouter";
   }
 
-  // Code Generation
+  // Coding
 
   if (
 
@@ -41,7 +59,11 @@ export function decideModel(
 
     text.includes("node") ||
 
-    text.includes("sql")
+    text.includes("sql") ||
+
+    text.includes("bug") ||
+
+    text.includes("error")
   ) {
 
     return "deepseek";
@@ -65,24 +87,16 @@ export function decideModel(
     return "groq";
   }
 
-  // Research
+  // Offline
 
   if (
 
-    text.includes("compare") ||
+    text.includes("offline") ||
 
-    text.includes("research") ||
-
-    text.includes("analyze") ||
-
-    text.includes("advantages") ||
-
-    text.includes("disadvantages") ||
-
-    text.includes("difference between")
+    text.includes("local mode")
   ) {
 
-    return "openrouter";
+    return "ollama";
   }
 
   return "groq";
