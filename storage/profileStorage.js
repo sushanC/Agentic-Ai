@@ -1,12 +1,19 @@
 import fs from "fs/promises";
 
+import {
+  getStoragePath
+} from "./storagePath.js";
+
+const PROFILE_FILE =
+  getStoragePath("profile.json");
+
 export async function loadProfile() {
 
   try {
 
     const data =
       await fs.readFile(
-        "./memory/profile.json",
+        PROFILE_FILE,
         "utf-8"
       );
 
@@ -23,7 +30,7 @@ export async function saveProfile(
 ) {
 
   await fs.writeFile(
-    "./memory/profile.json",
+    PROFILE_FILE,
     JSON.stringify(
       profile,
       null,

@@ -1,5 +1,9 @@
 import ollama from "ollama";
 
+import {
+  SYSTEM_PROMPT
+} from "./systemPrompt.js";
+
 export async function askOllama(
   prompt
 ) {
@@ -11,6 +15,10 @@ export async function askOllama(
         "qwen3:8b",
 
       messages: [
+        {
+          role: "system",
+          content: SYSTEM_PROMPT
+        },
         {
           role: "user",
           content: prompt

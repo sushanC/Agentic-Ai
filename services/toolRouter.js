@@ -1,361 +1,316 @@
-import { askAI }
-from "./ai.js";
-
-import {
-  loadTasks,
-  saveTasks
-} from "../storage/tasksStorage.js";
-
-import {
-  loadNotes,
-  saveNotes
-} from "../storage/notesStorage.js";
-
-import {
-  askPDF
-} from "./pdfQAService.js";
-
 import {
   loadPDFMemory
 } from "../storage/pdfStorage.js";
 
 import {
-  decideTool
-} from "./agentRouter.js";
+  getEmbedding,
+  cosineSimilarity
+} from "./embeddingService.js";
 
 import {
-  loadMemory,
-  deleteMemoryKey
-} from "../storage/memoryStorage.js";
+  askAI
+} from "./ai.js";
 
 import {
-  handleWeb
-} from "../handlers/webHandler.js";
+  incrementStat
+} from "../storage/statsStorage.js";
 
-import { planActions } from "./actionPlanner.js";
-import { executeActions } from "./actionExecutor.js";
-import {
-  updateMemory
-} from "./memoryService.js";
+/**
+ * Find the best matching PDF for a question.
+ *
+ * Strategy:
+ * 1. If only one PDF — use it directly.
+ * 2. If multiple PDFs — score each by name similarity to the question.
+ * 3. Fall back to the first PDF if no name match is found.
+ */
+async function findBestPDF(question) {
 
-// helper function
+  const memory = await loadPDFMemory();
+  const pdfNames = Object.keys(memory);
 
-async function findBestPDF(
-  question
-) {
-
-  const memory =
-    await loadPDFMemory();
-
-  const pdfNames =
-    Object.keys(memory);
-
-  // Temporary:
-  // always use OSE
-
-  if (
-    pdfNames.includes(
-      "documents/OSE.pdf"
-    )
-  ) {
-
-    return "documents/OSE.pdf";
+  if (pdfNames.length === 0) {
+    return null;
   }
 
-  return pdfNames[0];
-}
+  if (pdfNames.length === 1) {
+    return pdfNames[0];
+  }
 
-function isAgentRequest(
-  text
-) {
-
-  console.log(
-    "\n🤖 AGENT CHECK:"
+  // Score PDF names by keyword overlap with question
+  const qWords = new Set(
+    question.toLowerCase().split(/\W+/).filter(w => w.length > 3)
   );
 
+  let bestName = pdfNames[0];
+  let bestScore = 0;
+
+  for (const name of pdfNames) {
+
+    const nameWords = name
+      .toLowerCase()
+      .replace(/[_\-\.]/g, " ")
+      .split(/\W+/)
+      .filter(w => w.length > 3);
+
+    let score = 0;
+
+    for (const w of nameWords) {
+      if (qWords.has(w)) score++;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestName = name;
+    }
+  }
+
+  return bestName;
+}
+
+/**
+ * Determine whether the message is a
+ * multi-step agent request.
+ */
+function isAgentRequest(text) {
+
+  console.log("\n🤖 AGENT CHECK:");
   console.log(text);
 
   return (
-
-    text.includes(
-      "and create"
-    ) ||
-
-    text.includes(
-      "and save"
-    ) ||
-
-    text.includes(
-      "create tasks"
-    ) ||
-
-    text.includes(
-      "save as notes"
-    ) ||
-
-    text.includes(
-      "find and save"
-    ) ||
-
-    text.includes(
-      "research"
-    )
+    text.includes("and create") ||
+    text.includes("and save") ||
+    text.includes("create tasks") ||
+    text.includes("save as notes") ||
+    text.includes("find and save") ||
+    text.includes("research and") ||
+    text.includes("research")
   );
 }
-
-
 
 export async function routeRequest(
   message
 ) {
 
-  const text =
-    message.toLowerCase();
+  const text = message.toLowerCase();
 
+  // =====================
   // AGENT MODE
+  // =====================
 
-  if (
-    isAgentRequest(text)
-  ) {
+  if (isAgentRequest(text)) {
 
-    console.log(
-      "\n🚀 AGENT MODE"
-    );
+    console.log("\n🚀 AGENT MODE");
 
-    const plan =
-      await planActions(
-        message
-      );
+    const { planActions } =
+      await import("./actionPlanner.js");
+    const { executeActions } =
+      await import("./actionExecutor.js");
 
-    console.log(
-      "\n📋 PLAN:"
-    );
+    const plan = await planActions(message);
 
-    console.log(
-      JSON.stringify(
-        plan,
-        null,
-        2
-      )
-    );
+    console.log("\n📋 PLAN:");
+    console.log(JSON.stringify(plan, null, 2));
 
-    const result =
-      await executeActions(
-        plan
-      );
+    const result = await executeActions(plan);
 
     return {
-
       tool: "agent",
-
-      answer:
-        result.join("\n")
+      answer: result.join("\n")
     };
   }
 
+  // =====================
   // NORMAL ROUTER
+  // (AI-driven tool decision)
+  // =====================
 
-  const aiTool =
-    await decideTool(
-      message
-    );
+  const { decideTool } =
+    await import("./agentRouter.js");
 
-  if (
-  aiTool === "web"
-) {
+  const aiTool = await decideTool(message);
 
-  console.log(
-    "\n🌐 WEB TOOL TRIGGERED"
-  );
+  console.log("\n🤖 AI Router:");
+  console.log(aiTool);
 
-  const answer =
-    await handleWeb(
+  // =====================
+  // SHOW MEMORY
+  // =====================
+
+  if (text === "show memory") {
+
+    const { loadMemory } =
+      await import("../storage/memoryStorage.js");
+
+    const memory = await loadMemory();
+
+    return {
+      tool: "memory",
+      answer: JSON.stringify(memory, null, 2)
+    };
+  }
+
+  // =====================
+  // WEB SEARCH
+  // =====================
+
+  if (aiTool === "web") {
+
+    console.log("\n🌐 WEB TOOL TRIGGERED");
+
+    const { handleWeb } =
+      await import("../handlers/webHandler.js");
+
+    const answer = await handleWeb(
       `web search ${message}`
     );
 
-  return {
-    tool: "web",
-    answer
-  };
-}
-
-console.log(
-  "\n🤖 AI Router:"
-);
-
-console.log(
-  aiTool
-);
-
-  if (
-  text === "show memory"
-) {
-
-  
-
-  const memory =
-    await loadMemory();
-
-  return {
-
-    tool: "memory",
-
-    answer:
-      JSON.stringify(
-        memory,
-        null,
-        2
-      )
-  };
-}
-
-
-  // TASK TOOL
-
-  if (
-    text.startsWith(
-      "add task"
-    )
-  ) {
-
-    const taskText =
-      message
-        .replace(
-          /add task/i,
-          ""
-        )
-        .trim();
-
-    const tasks =
-      await loadTasks();
-
-    tasks.push({
-
-      id: Date.now(),
-
-      text: taskText,
-
-      completed: false
-    });
-
-    await saveTasks(
-      tasks
-    );
-
     return {
-
-      tool: "task",
-
-      answer:
-        `✅ Task added: ${taskText}`
+      tool: "web",
+      answer
     };
   }
 
-  // NOTE TOOL
+  // =====================
+  // PDF TOOL
+  // =====================
+
+  if (aiTool === "pdf") {
+
+    const pdfName = await findBestPDF(message);
+
+    if (!pdfName) {
+      return {
+        tool: "pdf",
+        answer: "No PDFs uploaded yet. Please upload a PDF first."
+      };
+    }
+
+    console.log("\n📄 Selected PDF:", pdfName);
+    console.log("\n🤖 PDF Tool Triggered");
+
+    const { askPDF } =
+      await import("./pdfQAService.js");
+
+    const answer = await askPDF(pdfName, message);
+
+    return {
+      tool: "pdf",
+      answer
+    };
+  }
+
+  // =====================
+  // TASK TOOL
+  // =====================
 
   if (
-  text.startsWith("remember")
-) {
+    text.startsWith("add task") ||
+    aiTool === "task"
+  ) {
 
-  const memoryText =
-    message
+    const { loadTasks, saveTasks } =
+      await import("../storage/tasksStorage.js");
+
+    const taskText = message
+      .replace(/add task/i, "")
+      .trim();
+
+    const tasks = await loadTasks();
+
+    tasks.push({
+      id: Date.now(),
+      text: taskText,
+      completed: false
+    });
+
+    await saveTasks(tasks);
+
+    await incrementStat("tasks_created");
+
+    return {
+      tool: "task",
+      answer: `✅ Task added: ${taskText}`
+    };
+  }
+
+  // =====================
+  // MEMORY — REMEMBER
+  // =====================
+
+  if (text.startsWith("remember")) {
+
+    const { updateMemory } =
+      await import("./memoryService.js");
+
+    const memoryText = message
       .replace(/remember/i, "")
       .trim();
 
-  await updateMemory(
-    memoryText
-  );
+    await updateMemory(memoryText);
 
-  return {
-    tool: "memory",
-    answer:
-      `🧠 Memory updated: ${memoryText}`
-  };
-}
-  if (
-  text.includes(
-    "deadlock"
-  ) ||
+    return {
+      tool: "memory",
+      answer: `🧠 Memory updated: ${memoryText}`
+    };
+  }
 
-  text.includes(
-    "algorithm"
-  ) ||
+  // =====================
+  // MEMORY — FORGET
+  // =====================
 
-  text.includes(
-    "process"
-  ) ||
+  if (text.startsWith("forget ")) {
 
-  text.includes(
-    "thread"
-  )
-) {
+    const { deleteMemoryKey } =
+      await import("../storage/memoryStorage.js");
 
-const pdfName =
-  await findBestPDF(
-    message
-  );
-
-console.log(
-  "\n📄 Selected PDF:",
-  pdfName
-);
-
-console.log(
-  "\n🤖 PDF Tool Triggered"
-);
-
-  const answer =
-    await askPDF(
-      pdfName,
-      message
-    );
-
-  return {
-
-    tool: "pdf",
-
-    answer
-  };
-}
-
-if (
-  text.startsWith(
-    "forget "
-  )
-) {
-
-  const key =
-    message
-      .replace(
-        /forget/i,
-        ""
-      )
+    const key = message
+      .replace(/forget/i, "")
       .trim();
 
-  await deleteMemoryKey(
-    key
-  );
+    await deleteMemoryKey(key);
 
-  return {
+    return {
+      tool: "memory",
+      answer: `🧠 Forgot: ${key}`
+    };
+  }
 
-    tool: "memory",
+  // =====================
+  // NOTE TOOL
+  // =====================
 
-    answer:
-      `🧠 Forgot: ${key}`
-  };
-}
+  if (aiTool === "note") {
 
+    const { loadNotes, saveNotes } =
+      await import("../storage/notesStorage.js");
+
+    const notes = await loadNotes();
+
+    notes.push({
+      id: Date.now(),
+      content: message
+    });
+
+    await saveNotes(notes);
+
+    await incrementStat("notes_saved");
+
+    return {
+      tool: "note",
+      answer: `📝 Note saved.`
+    };
+  }
+
+  // =====================
   // NORMAL CHAT
+  // =====================
 
-  const answer =
-    await askAI(
-      message
-    );
+  const { askAI } = await import("./ai.js");
+
+  const answer = await askAI(message);
 
   return {
-
     tool: "chat",
-
     answer
   };
 }

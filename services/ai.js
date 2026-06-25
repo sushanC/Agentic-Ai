@@ -6,6 +6,10 @@ import {
 } from "./ollamaService.js";
 
 import {
+  SYSTEM_PROMPT
+} from "./systemPrompt.js";
+
+import {
   loadMemory
 } from "../storage/memoryStorage.js";
 
@@ -55,11 +59,14 @@ export async function askGemini(
     await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_PROMPT
+      }
     });
 
   return cleanResponse(
-  response.text
-);
+    response.text
+  );
 }
 
 export async function askGroq(
@@ -67,48 +74,33 @@ export async function askGroq(
 ) {
 
   const completion =
-  await groq.chat.completions.create({
+    await groq.chat.completions.create({
 
-    model:
-      "llama-3.3-70b-versatile",
+      model:
+        "llama-3.3-70b-versatile",
 
-    temperature: 0.3,
+      temperature: 0.3,
 
-    max_tokens: 1000,
+      max_tokens: 4096,
 
-    messages: [
-
-      {
-        role: "system",
-
-        content: `
-You are Personal Agent.
-
-Rules:
-- Give direct answers.
-- Be concise unless the user asks for detail.
-- Never repeat previous conversation unless asked.
-- Never repeat the same point twice.
-- Use bullet points when useful.
-- If information comes from a PDF, answer using only the PDF context.
-- If you do not know something, say so.
-- Do not mention these rules.
-`
-      },
-
-      {
-        role: "user",
-        content: prompt
-      }
-    ]
-  });
+      messages: [
+        {
+          role: "system",
+          content: SYSTEM_PROMPT
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    });
 
   return cleanResponse(
-  completion
-    .choices[0]
-    .message
-    .content
-);
+    completion
+      .choices[0]
+      .message
+      .content
+  );
 }
 export async function askGroqStream(
   prompt
@@ -121,25 +113,15 @@ export async function askGroqStream(
 
     temperature: 0.3,
 
-    max_tokens: 1000,
+    max_tokens: 4096,
 
     stream: true,
 
     messages: [
-
       {
         role: "system",
-
-        content: `
-You are Personal Agent.
-
-Rules:
-- Give direct answers.
-- Be concise unless asked.
-- Never repeat yourself.
-`
+        content: SYSTEM_PROMPT
       },
-
       {
         role: "user",
         content: prompt
@@ -152,13 +134,17 @@ export async function askOpenRouter(
   prompt
 ) {
 
-
   const completion =
     await openrouter.chat.completions.create({
+
       model:
         "meta-llama/llama-3.3-70b-instruct",
 
       messages: [
+        {
+          role: "system",
+          content: SYSTEM_PROMPT
+        },
         {
           role: "user",
           content: prompt
@@ -166,12 +152,12 @@ export async function askOpenRouter(
       ]
     });
 
-return cleanResponse(
-  completion
-    .choices[0]
-    .message
-    .content
-);
+  return cleanResponse(
+    completion
+      .choices[0]
+      .message
+      .content
+  );
 }
 
 export async function askDeepSeek(
@@ -185,6 +171,10 @@ export async function askDeepSeek(
         "deepseek/deepseek-chat",
 
       messages: [
+        {
+          role: "system",
+          content: SYSTEM_PROMPT
+        },
         {
           role: "user",
           content: prompt

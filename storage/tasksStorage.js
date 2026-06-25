@@ -2,18 +2,12 @@ import fs from "fs/promises";
 
 import {
   getStoragePath
-}
-from "./storagePath.js";
+} from "./storagePath.js";
 
 const TASKS_FILE =
   getStoragePath(
     "tasks.json"
   );
-
-console.log(
-  "📁 TASKS FILE:",
-  TASKS_FILE
-);
 
 export async function loadTasks() {
 
@@ -21,7 +15,7 @@ export async function loadTasks() {
 
     const data =
       await fs.readFile(
-        "./tasks.json",
+        TASKS_FILE,
         "utf-8"
       );
 
@@ -38,7 +32,7 @@ export async function saveTasks(
 ) {
 
   await fs.writeFile(
-    "./tasks.json",
+    TASKS_FILE,
     JSON.stringify(
       tasks,
       null,

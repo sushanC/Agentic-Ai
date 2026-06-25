@@ -1,7 +1,11 @@
 import fs from "fs/promises";
 
-const FILE =
-  "./memory/summary.json";
+import {
+  getStoragePath
+} from "./storagePath.js";
+
+const SUMMARY_FILE =
+  getStoragePath("summary.json");
 
 export async function loadSummary() {
 
@@ -9,13 +13,11 @@ export async function loadSummary() {
 
     const data =
       await fs.readFile(
-        FILE,
+        SUMMARY_FILE,
         "utf8"
       );
 
-    return JSON.parse(
-      data
-    );
+    return JSON.parse(data);
 
   } catch {
 
@@ -30,8 +32,7 @@ export async function saveSummary(
 ) {
 
   await fs.writeFile(
-    FILE,
-
+    SUMMARY_FILE,
     JSON.stringify(
       summary,
       null,
