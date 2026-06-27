@@ -8,6 +8,20 @@ import { askGroqStream } from "./services/ai.js";
 import { SYSTEM_PROMPT } from "./services/systemPrompt.js";
 import { handleVoice } from "./handlers/voiceHandler.js";
 
+// Phase 3 — Confirmation Workflow
+import {
+  confirmAction,
+  cancelAction,
+  listPending
+} from "./services/confirmationService.js";
+
+// Phase 4 — Gmail API Integration
+import {
+  getGmailStatus,
+  getAuthUrl,
+  exchangeCodeForTokens
+} from "./services/gmailService.js";
+
 import {
   loadNotes,
   saveNotes
@@ -174,6 +188,19 @@ app.post(
       // Tool-based results (agent, web, pdf, task, note, memory)
       // — return immediately without streaming
       if (result.tool !== "chat") {
+
+        // ── Phase 3: Confirmation Workflow ──────────────────────────────────
+        // If a tool returned a pending_confirmation object, serialize it
+        // as a special marker that the frontend can detect and parse.
+        // Format: __CONFIRMATION__:<json>
+        // The frontend strips the prefix and renders a ConfirmationCard.
+        if (result.tool === "confirmation") {
+          res.setHeader("Content-Type", "text/plain");
+          res.setHeader("Transfer-Encoding", "chunked");
+          res.write("__CONFIRMATION__:" + JSON.stringify(result.answer));
+          return res.end();
+        }
+        // ────────────────────────────────────────────────────────────────────
 
         await addMessage("user", message);
         await addMessage("assistant", result.answer);
@@ -751,6 +778,169 @@ app.post(
 
       res.status(500).json({
         error: "Restore failed: " + err.message
+      });
+    }
+  }
+);
+
+// ============================================================
+// POST /confirm
+// Confirm a pending action and execute it
+// Phase 3 — Confirmation Workflow
+// ============================================================
+
+app.post(
+  "/confirm",
+  async (req, res) => {
+
+    try {
+
+      const { confirmationId } = req.body;
+
+      if (!confirmationId) {
+        return res.status(400).json({
+          success: false,
+          message: "confirmationId is required."
+        });
+      }
+
+      const result = await confirmAction(confirmationId);
+      
+      if (result.success === false) {
+        return res.status(400).json(result);
+      }
+      
+      res.json(result);
+
+    } catch (err) {
+
+      console.error("CONFIRM ERROR:", err);
+
+      res.status(500).json({
+        success: false,
+        message: "Internal error during confirmation."
+      });
+    }
+  }
+);
+
+// ============================================================
+// Gmail OAuth Routes — Phase 4
+// ============================================================
+
+app.get(
+  "/gmail/status",
+  async (req, res) => {
+    try {
+      const status = await getGmailStatus();
+      res.json(status);
+    } catch (err) {
+      console.error("Gmail status error:", err);
+      res.status(500).json({ error: "Failed to get Gmail status." });
+    }
+  }
+);
+
+app.get(
+  "/gmail/auth",
+  async (req, res) => {
+    try {
+      const authUrl = getAuthUrl();
+      if (!authUrl) {
+        return res.status(400).send("Gmail credentials are not configured in your .env file.");
+      }
+      res.redirect(authUrl);
+    } catch (err) {
+      console.error("Gmail auth redirect error:", err);
+      res.status(500).send("Failed to initiate Gmail authorization.");
+    }
+  }
+);
+
+app.get(
+  "/gmail/callback",
+  async (req, res) => {
+    try {
+      const { code } = req.query;
+      if (!code) {
+        return res.status(400).send("Authorization code is missing.");
+      }
+      await exchangeCodeForTokens(code);
+      res.send(`
+        <html>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #1e1e2e; color: #cdd6f4;">
+            <div style="background-color: #313244; padding: 30px; border-radius: 10px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+              <h2 style="color: #a6e3a1;">✅ Gmail Linked Successfully!</h2>
+              <p>samGPT is now authorized to send emails through your Gmail account.</p>
+              <p style="color: #a6adc8; font-size: 14px;">You can close this tab and return to the application.</p>
+            </div>
+          </body>
+        </html>
+      `);
+    } catch (err) {
+      console.error("Gmail callback error:", err);
+      res.status(500).send("Failed to complete Gmail authorization: " + err.message);
+    }
+  }
+);
+
+// ============================================================
+// POST /cancel
+// Cancel a pending action without executing it
+// Phase 3 — Confirmation Workflow
+// ============================================================
+
+app.post(
+  "/cancel",
+  async (req, res) => {
+
+    try {
+
+      const { confirmationId } = req.body;
+
+      if (!confirmationId) {
+        return res.status(400).json({
+          success: false,
+          message: "confirmationId is required."
+        });
+      }
+
+      const result = await cancelAction(confirmationId);
+      res.json(result);
+
+    } catch (err) {
+
+      console.error("CANCEL ERROR:", err);
+
+      res.status(500).json({
+        success: false,
+        message: "Internal error during cancellation."
+      });
+    }
+  }
+);
+
+// ============================================================
+// GET /pending
+// List all active pending confirmation actions
+// Phase 3 — Confirmation Workflow
+// ============================================================
+
+app.get(
+  "/pending",
+  async (req, res) => {
+
+    try {
+
+      const pending = await listPending();
+      res.json(pending);
+
+    } catch (err) {
+
+      console.error("PENDING LIST ERROR:", err);
+
+      res.status(500).json({
+        error: "Failed to load pending actions."
       });
     }
   }

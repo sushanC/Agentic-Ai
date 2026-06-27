@@ -18,6 +18,7 @@ import { askGroq } from "./ai.js";
  *   create_study_tasks — extract and create multiple study tasks
  *   memory_lookup   — retrieve from memory
  *   pdf_search      — search uploaded PDFs
+ *   email_draft     — prepare an email draft for user confirmation (Phase 3)
  */
 export async function planActions(
   message
@@ -42,6 +43,7 @@ create_task
 create_study_tasks
 memory_lookup
 pdf_search
+email_draft
 
 Definitions:
 
@@ -54,6 +56,7 @@ save_note: Save specific text as a note.
 save_research_note: Save the last research result as a note.
 create_task: Create a single actionable task.
 create_study_tasks: Extract and create multiple study tasks from research.
+email_draft: Prepare an email draft for user confirmation before sending. Use when user wants to send, write, draft, or compose an email.
 
 User Request:
 
@@ -113,6 +116,22 @@ Output:
 {
   "actions": [
     { "tool": "create_task", "input": "Finish DSA assignment" }
+  ]
+}
+
+User: Draft an email to john@example.com about the project update
+Output:
+{
+  "actions": [
+    { "tool": "email_draft", "input": "Draft an email to john@example.com about the project update" }
+  ]
+}
+
+User: Send email to alice@corp.com subject: Meeting Tomorrow body: Are you free at 3pm?
+Output:
+{
+  "actions": [
+    { "tool": "email_draft", "input": "Send email to alice@corp.com subject: Meeting Tomorrow body: Are you free at 3pm?" }
   ]
 }
 `;

@@ -83,7 +83,15 @@ function isAgentRequest(text) {
     text.includes("save as notes") ||
     text.includes("find and save") ||
     text.includes("research and") ||
-    text.includes("research")
+    text.includes("research") ||
+    // Phase 3 — Email tool triggers
+    text.includes("send email") ||
+    text.includes("draft email") ||
+    text.includes("write email") ||
+    text.includes("compose email") ||
+    text.includes("send an email") ||
+    text.includes("draft an email") ||
+    text.includes("email to ")
   );
 }
 
@@ -111,11 +119,29 @@ export async function routeRequest(
     console.log("\n📋 PLAN:");
     console.log(JSON.stringify(plan, null, 2));
 
-    const result = await executeActions(plan);
+    const results = await executeActions(plan);
+
+    // ── Confirmation Intercept (Phase 3) ───────────────────────────────────
+    // If any result is a pending_confirmation object, surface it to the
+    // caller instead of joining as plain text. The server.js /chat/stream
+    // handler detects tool === "confirmation" and serialises it as
+    // __CONFIRMATION__:<json> so the frontend can parse and display it.
+    if (
+      results.length > 0 &&
+      results[0] !== null &&
+      typeof results[0] === "object" &&
+      results[0].status === "pending_confirmation"
+    ) {
+      return {
+        tool: "confirmation",
+        answer: results[0]
+      };
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     return {
       tool: "agent",
-      answer: result.join("\n")
+      answer: results.join("\n")
     };
   }
 
