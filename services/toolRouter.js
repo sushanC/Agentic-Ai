@@ -137,6 +137,22 @@ export async function routeRequest(
         answer: results[0]
       };
     }
+
+    // ── Waiting Input Intercept (Phase 5) ─────────────────────────────────
+    // When the email tool is missing a required field (e.g. recipientEmail),
+    // it returns status: "waiting_input". Surface this to the server so it
+    // can write the __WAITING_INPUT__: SSE marker to the frontend.
+    if (
+      results.length > 0 &&
+      results[0] !== null &&
+      typeof results[0] === "object" &&
+      results[0].status === "waiting_input"
+    ) {
+      return {
+        tool: "waiting_input",
+        answer: results[0]
+      };
+    }
     // ─────────────────────────────────────────────────────────────────────
 
     return {

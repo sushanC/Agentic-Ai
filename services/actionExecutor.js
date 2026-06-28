@@ -35,22 +35,27 @@ export async function executeActions(plan) {
     try {
       const result = await registry.executeTool(action);
 
-      // ── Confirmation Intercept ────────────────────────────────────────────
-      // If the tool returned a structured confirmation object, we stop
-      // executing remaining actions and surface the confirmation to the user.
-      // This is the ONLY addition for Phase 3 — all other paths are unchanged.
+      // ── Confirmation / Waiting Intercept ─────────────────────────────────
+      // If the tool returned a structured pending_confirmation or waiting_input
+      // object, stop executing remaining actions and surface it to the caller.
+      // Phase 3: pending_confirmation (user must confirm before execution)
+      // Phase 5: waiting_input (AI is asking for missing information)
       if (
         result !== null &&
         typeof result === "object" &&
-        result.status === "pending_confirmation"
+        (result.status === "pending_confirmation" ||
+         result.status === "waiting_input")
       ) {
-        console.log("\n🔒 CONFIRMATION REQUIRED — pausing execution:");
+        if (result.status === "pending_confirmation") {
+          console.log("\n🔒 CONFIRMATION REQUIRED — pausing execution:");
+        } else {
+          console.log("\n📧 WAITING FOR INPUT — pausing execution:");
+        }
         console.log(`   Tool: ${result.tool}`);
         console.log(`   ID:   ${result.confirmationId}`);
 
-        // Return immediately with the confirmation object.
-        // Any actions after this one in the plan are NOT executed yet —
-        // they will be re-run by POST /confirm after user approves.
+        // Return immediately — any remaining plan actions are NOT executed.
+        // Execution resumes when the user provides the missing info or confirms.
         return [result];
       }
       // ─────────────────────────────────────────────────────────────────────

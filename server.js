@@ -12,8 +12,15 @@ import { handleVoice } from "./handlers/voiceHandler.js";
 import {
   confirmAction,
   cancelAction,
-  listPending
+  listPending,
+  createPending
 } from "./services/confirmationService.js";
+
+// Phase 5 — Conversational Action Framework
+import {
+  getPendingAction,
+  removePendingAction
+} from "./storage/pendingActionsStorage.js";
 
 // Phase 4 — Gmail API Integration
 import {
@@ -198,6 +205,16 @@ app.post(
           res.setHeader("Content-Type", "text/plain");
           res.setHeader("Transfer-Encoding", "chunked");
           res.write("__CONFIRMATION__:" + JSON.stringify(result.answer));
+          return res.end();
+        }
+
+        // ── Phase 5: Waiting Input ────────────────────────────────────────
+        // When the email tool needs missing information (e.g. recipient email),
+        // write __WAITING_INPUT__:<json> so the frontend renders a question card.
+        if (result.tool === "waiting_input") {
+          res.setHeader("Content-Type", "text/plain");
+          res.setHeader("Transfer-Encoding", "chunked");
+          res.write("__WAITING_INPUT__:" + JSON.stringify(result.answer));
           return res.end();
         }
         // ────────────────────────────────────────────────────────────────────
@@ -941,6 +958,143 @@ app.get(
 
       res.status(500).json({
         error: "Failed to load pending actions."
+      });
+    }
+  }
+);
+
+// ============================================================
+// POST /email/provide-input
+// Resume a WAITING_FOR_INPUT email draft after the user provides
+// missing information (typically the recipient email address).
+//
+// Phase 5 — Conversational Action Framework
+//
+// This route:
+//   1. Loads the existing pending action (draft stored in payload)
+//   2. Validates the provided email address
+//   3. Saves the new contact to memory (for future lookups)
+//   4. Removes the WAITING_FOR_INPUT pending record
+//   5. Creates a new confirmed_draft pending record
+//   6. Streams __CONFIRMATION__:<json> — same protocol as /chat/stream
+//
+// The planner is NOT re-invoked. The original draft is fully preserved.
+// ============================================================
+
+app.post(
+  "/email/provide-input",
+  async (req, res) => {
+    try {
+      const { confirmationId, userInput } = req.body;
+
+      if (!confirmationId || !userInput) {
+        return res.status(400).json({
+          success: false,
+          message: "confirmationId and userInput are required."
+        });
+      }
+
+      // Load the WAITING_FOR_INPUT pending record
+      const pending = await getPendingAction(confirmationId);
+      if (!pending) {
+        return res.status(404).json({
+          success: false,
+          message: "This request has expired or was not found. Please start a new email draft."
+        });
+      }
+
+      const draft = pending.payload?.draft;
+      if (!draft) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid pending action — no draft data found."
+        });
+      }
+
+      // Extract a valid email address from the user's input
+      const emailMatch = userInput.trim().match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+      const providedEmail = emailMatch ? emailMatch[0].trim() : userInput.trim();
+
+      // Validate the extracted email
+      const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!EMAIL_REGEX.test(providedEmail)) {
+        console.log(`\n📧 Validation Failed — invalid input: "${providedEmail}"`);
+        return res.status(400).json({
+          success: false,
+          message: `"${providedEmail}" doesn't look like a valid email address. Please provide a valid email (e.g. name@example.com).`
+        });
+      }
+
+      // Save the contact to memory for future lookups
+      if (draft.recipientName) {
+        const memory = await loadMemory();
+        if (!memory.contacts) memory.contacts = {};
+        memory.contacts[draft.recipientName] = {
+          email: providedEmail,
+          savedAt: new Date().toISOString()
+        };
+        await saveMemory(memory);
+        console.log(`\n📧 Contact Saved: "${draft.recipientName}" → ${providedEmail}`);
+      }
+
+      // Remove the old WAITING_FOR_INPUT pending record
+      await removePendingAction(confirmationId);
+
+      // Build the confirmed_draft payload with the now-complete recipient
+      const confirmPayload = {
+        tool: "email_draft",
+        action: "confirmed_draft",
+        input: {
+          to: providedEmail,
+          cc: draft.cc || [],
+          bcc: draft.bcc || [],
+          subject: draft.subject,
+          body: draft.body,
+          html: draft.html || "",
+          signature: draft.signature || ""
+        }
+      };
+
+      const preview = {
+        to: providedEmail,
+        cc: (draft.cc || []).join(", "),
+        bcc: (draft.bcc || []).join(", "),
+        subject: draft.subject,
+        body: draft.body,
+        signature: draft.signature || ""
+      };
+
+      // Create the confirmation pending record (reuses existing confirmationService)
+      const newPending = await createPending({
+        tool: "email_draft",
+        action: "draft",
+        payload: confirmPayload,
+        preview,
+        title: "Send Email",
+        message: "Review and confirm this email before sending.",
+        ttlMinutes: 30
+      });
+
+      // Store messages in history
+      await addMessage("user", userInput);
+      await addMessage(
+        "assistant",
+        `📧 Got it! I'll send to ${providedEmail}. Please review the draft below.`
+      );
+
+      await incrementStat("messages");
+
+      // Stream the confirmation response — same protocol as /chat/stream
+      res.setHeader("Content-Type", "text/plain");
+      res.setHeader("Transfer-Encoding", "chunked");
+      res.write("__CONFIRMATION__:" + JSON.stringify(newPending));
+      res.end();
+
+    } catch (err) {
+      console.error("EMAIL PROVIDE-INPUT ERROR:", err);
+      res.status(500).json({
+        success: false,
+        message: "Internal error processing email input: " + err.message
       });
     }
   }
