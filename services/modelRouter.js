@@ -1,24 +1,36 @@
+import { resolveCapability } from "./modelRegistry.js";
+
 /**
  * modelRouter.js
  *
- * Decides which AI model to use based on:
- * 1. Tool type (explicit routing — highest priority)
- * 2. Keyword analysis of the message (fallback)
+ * Decides which AI model to use based on capabilities.
+ * Maps tools and messages to capabilities, then returns the resolved registry object.
  *
- * Routing table:
- *   pdf       → gemini   (vision + long context)
- *   web       → gemini   (summarization of web results)
- *   agent     → openrouter (complex multi-step planning)
- *   planning  → openrouter
- *   coding    → deepseek
- *   math      → groq
- *   offline   → ollama
- *   general   → groq (default)
+ * Capabilities:
+ *   general_chat
+ *   coding
+ *   research
+ *   writing
+ *   planning
+ *   reasoning
+ *   math
+ *   vision
+ *   pdf
+ *   memory_extraction
+ *   agent_planning
+ *   tool_calling
+ *   offline
  */
 export function decideModel(
   message = "",
   tool = "chat"
 ) {
+
+  // Helper to return model with matched capability attached
+  const resolve = (capability) => {
+    const modelConfig = resolveCapability(capability);
+    return { ...modelConfig, matchedCapability: capability };
+  };
 
   // =====================
   // TOOL-BASED ROUTING
@@ -26,18 +38,18 @@ export function decideModel(
   // =====================
 
   if (tool === "pdf") {
-    return "gemini";
+    return resolve("pdf");
   }
 
   if (tool === "web") {
-    return "gemini";
+    return resolve("research");
   }
 
   if (
     tool === "agent" ||
     tool === "planning"
   ) {
-    return "openrouter";
+    return resolve("agent_planning");
   }
 
   // =====================
@@ -53,10 +65,9 @@ export function decideModel(
     text.includes("plan") ||
     text.includes("roadmap") ||
     text.includes("strategy") ||
-    text.includes("research and save") ||
-    text.includes("analyze")
+    text.includes("research and save")
   ) {
-    return "openrouter";
+    return resolve("planning");
   }
 
   // Coding / debugging
@@ -76,7 +87,27 @@ export function decideModel(
     text.includes("function") ||
     text.includes("algorithm")
   ) {
-    return "deepseek";
+    return resolve("coding");
+  }
+
+  // Writing assistance (email drafting, essays, etc.)
+  if (
+    text.includes("write") ||
+    text.includes("draft") ||
+    text.includes("compose") ||
+    text.includes("email") ||
+    text.includes("essay")
+  ) {
+    return resolve("writing");
+  }
+
+  // Research / analysis
+  if (
+    text.includes("research") ||
+    text.includes("analyze") ||
+    text.includes("find out")
+  ) {
+    return resolve("research");
   }
 
   // Math
@@ -89,7 +120,7 @@ export function decideModel(
     text.includes("calculate") ||
     text.includes("compute")
   ) {
-    return "groq";
+    return resolve("math");
   }
 
   // Offline / local
@@ -97,9 +128,9 @@ export function decideModel(
     text.includes("offline") ||
     text.includes("local mode")
   ) {
-    return "ollama";
+    return resolve("offline");
   }
 
-  // Default
-  return "groq";
+  // Default general chat
+  return resolve("general_chat");
 }

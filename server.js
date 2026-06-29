@@ -211,10 +211,19 @@ app.post(
         // ── Phase 5: Waiting Input ────────────────────────────────────────
         // When the email tool needs missing information (e.g. recipient email),
         // write __WAITING_INPUT__:<json> so the frontend renders a question card.
+        // Protocol marker: "__WAITING_INPUT__:" + JSON.stringify(payload)
+        // The frontend detects this prefix in useChat.js and renders a WaitingInputCard.
         if (result.tool === "waiting_input") {
+          const waitingPayload = result.answer && typeof result.answer === "object"
+            ? result.answer
+            : { status: "waiting_input", error: "invalid payload" };
+
+          console.log("\n📧 Streaming __WAITING_INPUT__:");
+          console.log(JSON.stringify(waitingPayload, null, 2));
+
           res.setHeader("Content-Type", "text/plain");
           res.setHeader("Transfer-Encoding", "chunked");
-          res.write("__WAITING_INPUT__:" + JSON.stringify(result.answer));
+          res.write("__WAITING_INPUT__:" + JSON.stringify(waitingPayload));
           return res.end();
         }
         // ────────────────────────────────────────────────────────────────────
