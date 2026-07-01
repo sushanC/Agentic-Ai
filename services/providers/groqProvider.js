@@ -18,6 +18,14 @@ function getClient() {
 }
 
 export const groqProvider = {
+  maxContext: 32768,
+  preferredContextSize: 20000,
+  preferredHistorySize: 3,
+  streamingSupport: true,
+  reasoningSupport: false,
+  estimateTokens(text) {
+    return Math.ceil((text || "").length / 4);
+  },
   async generate(modelId, prompt, options = {}) {
     try {
       const client = getClient();

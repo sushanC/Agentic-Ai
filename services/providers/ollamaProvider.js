@@ -1,6 +1,14 @@
 import ollama from "ollama";
 
 export const ollamaProvider = {
+  maxContext: 8192,
+  preferredContextSize: 6144,
+  preferredHistorySize: 3,
+  streamingSupport: true,
+  reasoningSupport: false,
+  estimateTokens(text) {
+    return Math.ceil((text || "").length / 4);
+  },
   async generate(modelId, prompt, options = {}) {
     try {
       const messages = [];

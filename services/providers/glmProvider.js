@@ -18,6 +18,14 @@ function getClient() {
 }
 
 export const glmProvider = {
+  maxContext: 128000,
+  preferredContextSize: 64000,
+  preferredHistorySize: 5,
+  streamingSupport: true,
+  reasoningSupport: false,
+  estimateTokens(text) {
+    return Math.ceil((text || "").length / 4);
+  },
   async generate(modelId, prompt, options = {}) {
     try {
       const client = getClient();

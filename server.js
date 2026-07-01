@@ -3,6 +3,14 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 
+import {
+  getModelRegistry,
+  getModelStatus,
+  capabilityMapping,
+  resolveModel,
+  getModel
+} from "./services/modelRegistry.js";
+
 import { askAI } from "./services/ai.js";
 import { askGroqStream } from "./services/ai.js";
 import { SYSTEM_PROMPT } from "./services/systemPrompt.js";
@@ -49,8 +57,10 @@ import {
 } from "./services/pdfService.js";
 
 import {
-  getEmbedding
+  getEmbedding,
+  cosineSimilarity
 } from "./services/embeddingService.js";
+
 
 import {
   loadPDFMemory,
@@ -244,34 +254,10 @@ app.post(
 
       await addMessage("user", message);
 
-      const memory = await loadMemory();
-      const history = await getRecentHistory(10);
-
-      const fullPrompt = `
-User Profile:
-
-${JSON.stringify(memory, null, 2)}
-
-Recent Conversation:
-
-${history
-  .map(msg => `${msg.role}: ${msg.content}`)
-  .join("\n")
-}
-
-Current User Message:
-
-${message}
-
-${SYSTEM_PROMPT}
-`;
-
-      console.log("\n🧠 MEMORY:");
-      console.log(memory);
       console.log("\n💬 USER:");
       console.log(message);
 
-      const stream = await askGroqStream(fullPrompt);
+      const stream = await askGroqStream(message);
 
       let fullResponse = "";
 
@@ -640,6 +626,242 @@ app.delete(
 
       res.status(500).json({
         error: "Failed to delete PDF"
+      });
+    }
+  }
+);
+
+// ============================================================
+// GET /pdf/search
+// Semantic keyword search across a specific PDF.
+// Returns top matching chunks with approximate page numbers.
+// Query params: q (keyword), pdf (PDF name key)
+// ============================================================
+
+app.get(
+  "/pdf/search",
+  async (req, res) => {
+
+    try {
+
+      const { q, pdf } = req.query;
+
+      if (!q || !pdf) {
+        return res.status(400).json({
+          error: "Missing required query params: q, pdf"
+        });
+      }
+
+      const memory = await loadPDFMemory();
+      const chunks = memory[pdf];
+
+      if (!chunks) {
+        return res.status(404).json({
+          error: `PDF "${pdf}" not found in memory`
+        });
+      }
+
+      const queryEmbedding = await getEmbedding(q);
+
+      const scored = chunks.map((chunk, idx) => ({
+        text: chunk.text,
+        score: cosineSimilarity(queryEmbedding, chunk.embedding),
+        // Approximate page: every chunk is ~1000 chars (~0.5 page)
+        page: Math.max(1, Math.round(idx * 0.5) + 1),
+        chunkIndex: idx
+      }));
+
+
+      // Sort by score descending
+      scored.sort((a, b) => b.score - a.score);
+
+      const results = scored
+        .filter(item => item.score > 0.25)
+        .slice(0, 8)
+        .map(item => ({
+          page: item.page,
+          text: item.text.slice(0, 300),
+          score: parseFloat(item.score.toFixed(3))
+        }));
+
+      res.json({ results });
+
+    } catch (err) {
+
+      console.error("PDF SEARCH ERROR:", err);
+
+      res.status(500).json({
+        error: err.message
+      });
+    }
+  }
+);
+
+// ============================================================
+// POST /pdf/action
+// Run a structured AI action on a PDF: summarize | quiz |
+// flashcards | notes | explain.
+// Body: { pdfName: string, action: string }
+// ============================================================
+
+app.post(
+  "/pdf/action",
+  async (req, res) => {
+
+    try {
+
+      const { pdfName, action } = req.body;
+
+      if (!pdfName || !action) {
+        return res.status(400).json({
+          error: "pdfName and action are required"
+        });
+      }
+
+      const memory = await loadPDFMemory();
+      const chunks = memory[pdfName];
+
+      if (!chunks) {
+        return res.status(404).json({
+          error: `PDF "${pdfName}" not found`
+        });
+      }
+
+      // Use first 10 chunks for actions (broad document understanding)
+      const content = chunks
+        .slice(0, 10)
+        .map(c => c.text)
+        .join("\n\n");
+
+      const docLabel = pdfName
+        .split("/").pop()
+        .replace(/\.[^/.]+$/, "")
+        .replace(/[_-]/g, " ");
+
+      const PROMPTS = {
+        summarize: `
+You are an expert study assistant.
+Summarize the document "${docLabel}" using this exact format:
+
+# Summary: ${docLabel}
+
+## Main Topics
+- ...
+
+## Important Concepts
+- ...
+
+## Key Definitions
+- ...
+
+## Exam-Important Points
+- ...
+
+## Quick Revision (5 bullets)
+- ...
+
+Document Content:
+${content}
+`,
+        quiz: `
+You are an exam paper setter.
+Using ONLY the document "${docLabel}", create:
+
+# Quiz: ${docLabel}
+
+## Multiple Choice Questions (5)
+For each: question, 4 options (A–D), correct answer marked.
+
+## Short Answer Questions (5)
+Q: ...
+A: ...
+
+## Long Answer Questions (2)
+Q: ...
+A: ...
+
+Document Content:
+${content}
+`,
+        flashcards: `
+You are a study assistant.
+Create 15 flashcards from "${docLabel}".
+
+# Flashcards: ${docLabel}
+
+Format each as:
+**Q:** Question here
+**A:** Answer here
+---
+
+Keep answers short and revision-friendly.
+
+Document Content:
+${content}
+`,
+        notes: `
+You are a precise note-taker.
+Create structured study notes from "${docLabel}".
+
+# Study Notes: ${docLabel}
+
+For each major topic in the document, use this format:
+
+## [Topic Name]
+- Key point 1
+- Key point 2
+- Key point 3
+
+> **Definition:** important term: its meaning
+
+Include all major topics covered.
+
+Document Content:
+${content}
+`,
+        explain: `
+You are a tutor explaining "${docLabel}" to a student.
+Explain the core concepts in simple, clear language.
+
+# Plain English Explanation: ${docLabel}
+
+## What is this document about?
+...
+
+## Key Ideas (explained simply)
+...
+
+## Analogies and Examples
+...
+
+## What you need to remember
+...
+
+Document Content:
+${content}
+`
+      };
+
+      const prompt = PROMPTS[action];
+
+      if (!prompt) {
+        return res.status(400).json({
+          error: `Unknown action: "${action}". Valid: summarize, quiz, flashcards, notes, explain`
+        });
+      }
+
+      await incrementStat("pdf_queries");
+
+      const result = await askAI(prompt, "pdf");
+
+      res.json({ result, action, pdfName });
+
+    } catch (err) {
+
+      console.error("PDF ACTION ERROR:", err);
+
+      res.status(500).json({
+        error: err.message
       });
     }
   }
@@ -1105,6 +1327,185 @@ app.post(
         success: false,
         message: "Internal error processing email input: " + err.message
       });
+    }
+  }
+);
+
+// ============================================================
+// GET /models
+// Returns the full model registry with all metadata.
+// Frontend reads this to populate model cards and dropdowns dynamically.
+// ============================================================
+
+app.get(
+  "/models",
+  (req, res) => {
+    try {
+      const registry = getModelRegistry();
+      res.json(registry);
+    } catch (err) {
+      console.error("MODELS ERROR:", err);
+      res.status(500).json({ error: "Failed to load model registry" });
+    }
+  }
+);
+
+// ============================================================
+// GET /models/health
+// Runs provider.health(modelId) for each enabled model in parallel.
+// Returns { [key]: "online" | "offline" | "disabled" | "local" }
+// ============================================================
+
+app.get(
+  "/models/health",
+  async (req, res) => {
+    try {
+      const registry = getModelRegistry();
+
+      const { googleProvider }     = await import("./services/providers/googleProvider.js");
+      const { groqProvider }       = await import("./services/providers/groqProvider.js");
+      const { deepseekProvider }   = await import("./services/providers/deepseekProvider.js");
+      const { glmProvider }        = await import("./services/providers/glmProvider.js");
+      const { openRouterProvider } = await import("./services/providers/openRouterProvider.js");
+      const { ollamaProvider }     = await import("./services/providers/ollamaProvider.js");
+
+      const providerMap = {
+        google: googleProvider,
+        groq: groqProvider,
+        deepseek: deepseekProvider,
+        glm: glmProvider,
+        openrouter: openRouterProvider,
+        ollama: ollamaProvider
+      };
+
+      const checks = registry.map(async (model) => {
+        if (!model.enabled || model.status === "disabled") {
+          return [model.key, "disabled"];
+        }
+        if (model.provider === "ollama") {
+          return [model.key, "local"];
+        }
+        try {
+          const provider = providerMap[model.provider];
+          if (provider && typeof provider.health === "function") {
+            const healthy = await provider.health(model.modelId);
+            return [model.key, healthy ? "online" : "offline"];
+          }
+          return [model.key, getModelStatus(model.key)];
+        } catch {
+          return [model.key, "offline"];
+        }
+      });
+
+      const results = await Promise.all(checks);
+      const healthMap = Object.fromEntries(results);
+      res.json(healthMap);
+    } catch (err) {
+      console.error("MODELS HEALTH ERROR:", err);
+      res.status(500).json({ error: "Health check failed" });
+    }
+  }
+);
+
+// ============================================================
+// POST /models/test/:key
+// Sends a lightweight test prompt to the specified model.
+// Returns { success, latency, provider, modelId, displayName, tokens, response }
+// ============================================================
+
+app.post(
+  "/models/test/:key",
+  async (req, res) => {
+    const { key } = req.params;
+    try {
+      const modelConfig = getModel(key);
+      if (!modelConfig) {
+        return res.status(404).json({ success: false, error: `Model "${key}" not found in registry.` });
+      }
+
+      if (!modelConfig.enabled) {
+        return res.status(400).json({ success: false, error: `Model "${key}" is disabled.` });
+      }
+
+      const { googleProvider }     = await import("./services/providers/googleProvider.js");
+      const { groqProvider }       = await import("./services/providers/groqProvider.js");
+      const { deepseekProvider }   = await import("./services/providers/deepseekProvider.js");
+      const { glmProvider }        = await import("./services/providers/glmProvider.js");
+      const { openRouterProvider } = await import("./services/providers/openRouterProvider.js");
+      const { ollamaProvider }     = await import("./services/providers/ollamaProvider.js");
+
+      const providerMap = {
+        google: googleProvider,
+        groq: groqProvider,
+        deepseek: deepseekProvider,
+        glm: glmProvider,
+        openrouter: openRouterProvider,
+        ollama: ollamaProvider
+      };
+
+      const provider = providerMap[modelConfig.provider];
+      if (!provider) {
+        return res.status(500).json({ success: false, error: `Provider "${modelConfig.provider}" not found.` });
+      }
+
+      const testPrompt = "Respond with exactly: OK";
+      const startTime = Date.now();
+      const response = await provider.generate(modelConfig.modelId, testPrompt, {});
+      const latency = Date.now() - startTime;
+
+      const outputTokens = Math.ceil((response || "").length / 4);
+
+      res.json({
+        success: true,
+        latency,
+        provider: modelConfig.provider,
+        modelId: modelConfig.modelId,
+        displayName: modelConfig.displayName || key,
+        tokens: outputTokens,
+        response: (response || "").slice(0, 100)
+      });
+    } catch (err) {
+      console.error(`MODEL TEST ERROR [${key}]:`, err.message);
+      res.json({
+        success: false,
+        error: err.message,
+        provider: null,
+        latency: null,
+        tokens: 0
+      });
+    }
+  }
+);
+
+// ============================================================
+// GET /models/capabilities
+// Returns the current capability→model mapping, merged with
+// any per-capability overrides the user has saved in Settings.
+// Frontend uses this to display active routing configuration.
+// ============================================================
+
+app.get(
+  "/models/capabilities",
+  async (req, res) => {
+    try {
+      const { loadSettings } = await import("./storage/settingsStorage.js");
+      const settings = await loadSettings();
+      const overrides = settings.capabilityRoutes || {};
+
+      // Merge default mapping with user overrides
+      const effective = { ...capabilityMapping };
+      for (const [capability, modelKey] of Object.entries(overrides)) {
+        if (modelKey) effective[capability] = modelKey;
+      }
+
+      res.json({
+        default: capabilityMapping,
+        overrides,
+        effective
+      });
+    } catch (err) {
+      console.error("CAPABILITIES ERROR:", err);
+      res.status(500).json({ error: "Failed to load capability mapping" });
     }
   }
 );

@@ -1,10 +1,11 @@
-import { resolveCapability } from "./modelRegistry.js";
+import { resolveCapabilityWithOverride } from "./modelRegistry.js";
 
 /**
  * modelRouter.js
  *
  * Decides which AI model to use based on capabilities.
  * Maps tools and messages to capabilities, then returns the resolved registry object.
+ * All model selection goes through the Model Registry — no hardcoded provider/model names.
  *
  * Capabilities:
  *   general_chat
@@ -17,18 +18,20 @@ import { resolveCapability } from "./modelRegistry.js";
  *   vision
  *   pdf
  *   memory_extraction
+ *   web_search
  *   agent_planning
  *   tool_calling
  *   offline
  */
 export function decideModel(
   message = "",
-  tool = "chat"
+  tool = "chat",
+  overrides = {}
 ) {
 
-  // Helper to return model with matched capability attached
+  // Helper: resolve capability → model, checking user overrides first
   const resolve = (capability) => {
-    const modelConfig = resolveCapability(capability);
+    const modelConfig = resolveCapabilityWithOverride(capability, overrides);
     return { ...modelConfig, matchedCapability: capability };
   };
 
@@ -42,7 +45,11 @@ export function decideModel(
   }
 
   if (tool === "web") {
-    return resolve("research");
+    return resolve("web_search");
+  }
+
+  if (tool === "memory") {
+    return resolve("memory_extraction");
   }
 
   if (
@@ -57,8 +64,20 @@ export function decideModel(
   // (used when tool === "chat")
   // =====================
 
-  const text =
-    String(message).toLowerCase();
+  const text = String(message).toLowerCase();
+
+  // Vision / image analysis
+  if (
+    text.includes("image") ||
+    text.includes("photo") ||
+    text.includes("picture") ||
+    text.includes("screenshot") ||
+    text.includes("describe this") ||
+    text.includes("look at") ||
+    text.includes("what do you see")
+  ) {
+    return resolve("vision");
+  }
 
   // Planning / strategy
   if (
@@ -101,13 +120,32 @@ export function decideModel(
     return resolve("writing");
   }
 
-  // Research / analysis
+  // Research / analysis / comparison / summarization / long explanations
   if (
     text.includes("research") ||
     text.includes("analyze") ||
-    text.includes("find out")
+    text.includes("find out") ||
+    text.includes("compare") ||
+    text.includes("comparison") ||
+    text.includes("versus") ||
+    text.includes(" vs ") ||
+    text.includes("summarize") ||
+    text.includes("summary") ||
+    text.includes("explain in detail") ||
+    text.includes("technical documentation") ||
+    text.includes("long explanation")
   ) {
     return resolve("research");
+  }
+
+  // Web / live information
+  if (
+    text.includes("search online") ||
+    text.includes("find online") ||
+    text.includes("search the web") ||
+    text.includes("look up")
+  ) {
+    return resolve("web_search");
   }
 
   // Math

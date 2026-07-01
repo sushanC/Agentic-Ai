@@ -14,6 +14,14 @@ function getClient() {
 }
 
 export const googleProvider = {
+  maxContext: 1000000,
+  preferredContextSize: 100000,
+  preferredHistorySize: 10,
+  streamingSupport: true,
+  reasoningSupport: false,
+  estimateTokens(text) {
+    return Math.ceil((text || "").length / 4);
+  },
   async generate(modelId, prompt, options = {}) {
     try {
       const ai = getClient();

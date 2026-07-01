@@ -18,6 +18,14 @@ function getClient() {
 }
 
 export const deepseekProvider = {
+  maxContext: 64000,
+  preferredContextSize: 32000,
+  preferredHistorySize: 3,
+  streamingSupport: true,
+  reasoningSupport: true,
+  estimateTokens(text) {
+    return Math.ceil((text || "").length / 4);
+  },
   async generate(modelId, prompt, options = {}) {
     try {
       const client = getClient();
