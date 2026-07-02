@@ -1,0 +1,236 @@
+/**
+ * ModelSelector.js — Model Selection Engine
+ *
+ * Orchestrates the full selection pipeline:
+ *
+ *   CandidateBuilder
+ *       ↓ (all models normalized)
+ *   AvailabilityFilter
+ *       ↓ (unavailable models removed)
+ *   CapabilityFilter
+ *       ↓ (incapable models removed)
+ *   IntentScorer
+ *       ↓ (each candidate scored 0–100)
+ *   Sort by score descending
+ *       ↓
+ *   Pick winner (highest score)
+ *       ↓
+ *   SelectionDiagnostics (log)
+ *
+ * Returns the winning model config in a format compatible with what
+ * modelRouter.js and ai.js expect (includes matchedCapability).
+ *
+ * Fallback chain:
+ *  1. User override wins unconditionally if valid + available
+ *  2. Highest-scoring available+capable candidate wins
+ *  3. If no capable candidates, relax to general_chat candidates
+ *  4. If still none, use resolveCapability() from static mapping
+ */
+
+import { buildCandidates, buildOverrideCandidate } from "./CandidateBuilder.js";
+import { filterAvailable, getAvailableCandidates } from "./AvailabilityFilter.js";
+import { filterByCapability, resolveCapabilityForIntent } from "./CapabilityFilter.js";
+import { scoreCandidate } from "./IntentScorer.js";
+import { logSelectionDiagnostics, buildDiagnosticsSummary } from "./SelectionDiagnostics.js";
+import { resolveCapability } from "../modelRegistry.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal: score a list of available candidates and sort
+// ─────────────────────────────────────────────────────────────────────────────
+
+function scoreCandidates(candidates, intent) {
+  return candidates
+    .map(candidate => {
+      const { score, breakdown } = scoreCandidate(candidate, intent);
+      return { candidate, score, breakdown };
+    })
+    .sort((a, b) => {
+      // Primary: score descending
+      if (b.score !== a.score) return b.score - a.score;
+      // Tiebreak: priority ascending (lower = better)
+      return (a.candidate.priority || 99) - (b.candidate.priority || 99);
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Select the best model for a given intent.
+ *
+ * @param {object} params
+ * @param {string} params.intent           - Primary intent (from IntentDetector)
+ * @param {number} [params.confidence]     - Intent confidence (0–1)
+ * @param {string|null} [params.secondaryIntent]
+ * @param {object} [params.overrides]      - capabilityRoutes from settings
+ * @returns {{ selected: object, diagnostics: object }}
+ *          selected: model config with matchedCapability (compatible with existing callers)
+ *          diagnostics: machine-readable summary
+ */
+export function selectModel({
+  intent,
+  confidence = 1.0,
+  secondaryIntent = null,
+  overrides = {},
+}) {
+  const capability = resolveCapabilityForIntent(intent);
+
+  // ── 1. Build full candidate pool ──────────────────────────────────────────
+  const allCandidates = buildCandidates(overrides);
+
+  // ── 2. Check for user override first ─────────────────────────────────────
+  const overrideKey = overrides?.[capability];
+  if (overrideKey) {
+    const overrideCandidates = buildOverrideCandidate(capability, overrides);
+    const availableOverrides = getAvailableCandidates(overrideCandidates);
+
+    if (availableOverrides.length > 0) {
+      const overrideCandidate = availableOverrides[0];
+      const scored = scoreCandidates(availableOverrides, intent);
+
+      const availabilityResults = filterAvailable(allCandidates);
+      const diagnosticsInput = {
+        intent, confidence, secondaryIntent, capability,
+        allCandidates,
+        availabilityResults,
+        capabilityResults: { passed: availableOverrides, rejected: [] },
+        scoredCandidates: scored,
+        selected: overrideCandidate,
+        selectionReason: `User override: ${overrideKey} for capability "${capability}"`,
+        overrideApplied: overrideKey,
+      };
+      logSelectionDiagnostics(diagnosticsInput);
+
+      return {
+        selected: buildModelConfig(overrideCandidate, capability),
+        diagnostics: buildDiagnosticsSummary(diagnosticsInput),
+      };
+    }
+    // Override candidate is unavailable — fall through to standard selection
+    console.warn(`⚠️ [ModelSelector] User override "${overrideKey}" is unavailable. Falling through to standard selection.`);
+  }
+
+  // ── 3. Availability filter ────────────────────────────────────────────────
+  const availabilityResults = filterAvailable(allCandidates);
+  const availableCandidates = availabilityResults
+    .filter(r => r.available)
+    .map(r => r.candidate);
+
+  // ── 4. Capability filter ──────────────────────────────────────────────────
+  const { passed: capableCandidates, rejected: capabilityRejected } =
+    filterByCapability(availableCandidates, intent);
+
+  // ── 5. Score and sort ─────────────────────────────────────────────────────
+  let scoredCandidates = scoreCandidates(capableCandidates, intent);
+
+  // ── 6. Fallback: relax to general_chat if no capable candidates ───────────
+  let relaxedToGeneral = false;
+  if (scoredCandidates.length === 0 && availableCandidates.length > 0) {
+    console.warn(
+      `⚠️ [ModelSelector] No capable candidates for intent "${intent}" (capability: ${capability}). Relaxing to general_chat.`
+    );
+    relaxedToGeneral = true;
+    const { passed: generalCandidates } = filterByCapability(availableCandidates, "GeneralChat");
+    scoredCandidates = scoreCandidates(
+      generalCandidates.length > 0 ? generalCandidates : availableCandidates,
+      "GeneralChat"
+    );
+  }
+
+  // ── 7. Final fallback: static registry mapping ────────────────────────────
+  let selected;
+  let selectionReason;
+
+  if (scoredCandidates.length > 0) {
+    selected = scoredCandidates[0].candidate;
+    selectionReason = relaxedToGeneral
+      ? `No ${capability} candidates available — selected highest general_chat scorer`
+      : `Highest weighted score for ${intent} intent`;
+  } else {
+    // Absolute last resort — static capability mapping
+    console.warn(`⚠️ [ModelSelector] Zero available candidates. Using static registry fallback.`);
+    const staticModel = resolveCapability(capability);
+    selected = null; // Will be flagged in diagnostics
+
+    const diagnosticsInput = {
+      intent, confidence, secondaryIntent, capability,
+      allCandidates, availabilityResults,
+      capabilityResults: { passed: [], rejected: capabilityRejected },
+      scoredCandidates: [],
+      selected: null,
+      selectionReason: "All candidates unavailable — static registry fallback used",
+      overrideApplied: null,
+    };
+    logSelectionDiagnostics(diagnosticsInput);
+
+    return {
+      selected: { ...staticModel, matchedCapability: capability },
+      diagnostics: buildDiagnosticsSummary(diagnosticsInput),
+    };
+  }
+
+  // ── 8. Log diagnostics ────────────────────────────────────────────────────
+  const diagnosticsInput = {
+    intent, confidence, secondaryIntent, capability,
+    allCandidates,
+    availabilityResults,
+    capabilityResults: { passed: capableCandidates, rejected: capabilityRejected },
+    scoredCandidates,
+    selected,
+    selectionReason,
+    overrideApplied: null,
+  };
+  logSelectionDiagnostics(diagnosticsInput);
+
+  return {
+    selected: buildModelConfig(selected, capability),
+    diagnostics: buildDiagnosticsSummary(diagnosticsInput),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Converts a CandidateModel to the model config shape expected by ai.js callers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the model config object that ai.js and executeWithCie expect.
+ * Preserves all existing fields from the CandidateModel + adds matchedCapability.
+ *
+ * @param {import("./CandidateBuilder.js").CandidateModel} candidate
+ * @param {string} capability
+ * @returns {object} Model config compatible with existing callers
+ */
+function buildModelConfig(candidate, capability) {
+  return {
+    // Fields that ai.js accesses directly
+    name:            candidate.key,
+    provider:        candidate.provider,
+    modelId:         candidate.modelId,
+    displayName:     candidate.displayName,
+    fallback:        candidate.fallback,
+    enabled:         candidate.enabled,
+    status:          candidate.status,
+    latency:         candidate.latency,
+    contextWindow:   candidate.contextWindow,
+
+    // All capability flags (needed by some provider callers)
+    supportsStreaming:    candidate.flags.streaming,
+    supportsVision:      candidate.flags.vision,
+    supportsReasoning:   candidate.flags.reasoning,
+    supportsLongContext: candidate.flags.longContext,
+    supportsToolCalling: candidate.flags.toolCalling,
+    supportsMarkdown:    candidate.flags.markdown,
+    supportsPDF:         candidate.flags.pdf,
+    supportsMemory:      candidate.flags.memory,
+    supportsPlanning:    candidate.flags.planning,
+    supportsWriting:     candidate.flags.writing,
+    supportsCoding:      candidate.flags.coding,
+    supportsResearch:    candidate.flags.research,
+    supportsOffline:     candidate.flags.offline,
+
+    // MSE metadata
+    matchedCapability: capability,
+    _fromMSE: true,     // Flag so callers can tell MSE selected this
+  };
+}

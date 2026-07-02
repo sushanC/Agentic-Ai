@@ -1,18 +1,26 @@
-import { detectIntent } from "./IntentDetector.js";
+import { detectIntent, detectIntentFull } from "./IntentDetector.js";
 import { retrieveRelevantMemory } from "./MemoryRetriever.js";
 import { getDynamicHistory } from "./HistoryManager.js";
 import { getCompressedSummary } from "./SummaryManager.js";
 import { optimizeContext } from "./TokenBudgetManager.js";
 import { buildPrompt } from "./PromptBuilder.js";
+import { buildSummaryContext } from "./SummaryContextBuilder.js";
 
 export {
   detectIntent,
+  detectIntentFull,
   retrieveRelevantMemory,
   getDynamicHistory,
   getCompressedSummary,
   optimizeContext,
-  buildPrompt
+  buildPrompt,
+  buildSummaryContext
 };
+
+// New production hardening modules
+export * from "./ProviderErrorClassifier.js";
+export * from "./RetryPolicyEngine.js";
+export * from "./ProviderHealthManager.js";
 
 /**
  * Orchestrates the entire Context Intelligence Engine (CIE) pipeline.
@@ -54,7 +62,8 @@ export async function runCiePipeline(
     history,
     summary,
     pdfContext,
-    settings
+    settings,
+    intent
   });
 
   return {
@@ -62,6 +71,7 @@ export async function runCiePipeline(
     rawMemory: memory,
     rawHistory: history,
     rawSummary: summary,
+    systemPrompt,
     ...optimizationResult
   };
 }

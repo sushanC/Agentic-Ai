@@ -11,8 +11,7 @@ import {
   getModel
 } from "./services/modelRegistry.js";
 
-import { askAI } from "./services/ai.js";
-import { askGroqStream } from "./services/ai.js";
+import { askAI, askGroqStream, getLastModelUsed } from "./services/ai.js";
 import { SYSTEM_PROMPT } from "./services/systemPrompt.js";
 import { handleVoice } from "./handlers/voiceHandler.js";
 
@@ -205,6 +204,16 @@ app.post(
       // Tool-based results (agent, web, pdf, task, note, memory)
       // — return immediately without streaming
       if (result.tool !== "chat") {
+        const modelInfo = getLastModelUsed();
+        const timelinePayload = {
+          model: modelInfo.name,
+          modelName: modelInfo.displayName,
+          provider: modelInfo.provider,
+          steps: [
+            ...(result.executedSteps || []),
+            { name: modelInfo.displayName, status: "completed", isModel: true }
+          ]
+        };
 
         // ── Phase 3: Confirmation Workflow ──────────────────────────────────
         // If a tool returned a pending_confirmation object, serialize it
@@ -214,6 +223,13 @@ app.post(
         if (result.tool === "confirmation") {
           res.setHeader("Content-Type", "text/plain");
           res.setHeader("Transfer-Encoding", "chunked");
+          
+          // Inject confirmation-specific timeline step
+          timelinePayload.steps = [
+            ...(result.executedSteps || []),
+            { name: "confirmation", status: "completed" }
+          ];
+          res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
           res.write("__CONFIRMATION__:" + JSON.stringify(result.answer));
           return res.end();
         }
@@ -233,6 +249,13 @@ app.post(
 
           res.setHeader("Content-Type", "text/plain");
           res.setHeader("Transfer-Encoding", "chunked");
+          
+          // Inject waiting_input-specific timeline step
+          timelinePayload.steps = [
+            ...(result.executedSteps || []),
+            { name: "waiting_input", status: "completed" }
+          ];
+          res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
           res.write("__WAITING_INPUT__:" + JSON.stringify(waitingPayload));
           return res.end();
         }
@@ -244,6 +267,7 @@ app.post(
 
         res.setHeader("Content-Type", "text/plain");
         res.setHeader("Transfer-Encoding", "chunked");
+        res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
         res.write(result.answer);
         return res.end();
       }
@@ -258,6 +282,17 @@ app.post(
       console.log(message);
 
       const stream = await askGroqStream(message);
+      
+      const modelInfo = getLastModelUsed();
+      const timelinePayload = {
+        model: modelInfo.name,
+        modelName: modelInfo.displayName,
+        provider: modelInfo.provider,
+        steps: [
+          { name: modelInfo.displayName, status: "running", isModel: true }
+        ]
+      };
+      res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
 
       let fullResponse = "";
 

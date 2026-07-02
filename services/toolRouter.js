@@ -134,7 +134,11 @@ export async function routeRequest(
     ) {
       return {
         tool: "confirmation",
-        answer: results[0]
+        answer: results[0],
+        executedSteps: [
+          { name: "planning", status: "completed" },
+          ...(results.steps || [])
+        ]
       };
     }
 
@@ -150,14 +154,22 @@ export async function routeRequest(
     ) {
       return {
         tool: "waiting_input",
-        answer: results[0]
+        answer: results[0],
+        executedSteps: [
+          { name: "planning", status: "completed" },
+          ...(results.steps || [])
+        ]
       };
     }
     // ─────────────────────────────────────────────────────────────────────
 
     return {
       tool: "agent",
-      answer: results.join("\n")
+      answer: results.join("\n"),
+      executedSteps: [
+        { name: "planning", status: "completed" },
+        ...(results.steps || [])
+      ]
     };
   }
 
@@ -187,7 +199,10 @@ export async function routeRequest(
 
     return {
       tool: "memory",
-      answer: JSON.stringify(memory, null, 2)
+      answer: JSON.stringify(memory, null, 2),
+      executedSteps: [
+        { name: "memory_lookup", status: "completed" }
+      ]
     };
   }
 
@@ -208,7 +223,10 @@ export async function routeRequest(
 
     return {
       tool: "web",
-      answer
+      answer,
+      executedSteps: [
+        { name: "web_search", status: "completed" }
+      ]
     };
   }
 
@@ -223,7 +241,10 @@ export async function routeRequest(
     if (!pdfName) {
       return {
         tool: "pdf",
-        answer: "No PDFs uploaded yet. Please upload a PDF first."
+        answer: "No PDFs uploaded yet. Please upload a PDF first.",
+        executedSteps: [
+          { name: "pdf_search", status: "failed" }
+        ]
       };
     }
 
@@ -237,7 +258,10 @@ export async function routeRequest(
 
     return {
       tool: "pdf",
-      answer
+      answer,
+      executedSteps: [
+        { name: "pdf_search", status: "completed" }
+      ]
     };
   }
 
@@ -271,7 +295,10 @@ export async function routeRequest(
 
     return {
       tool: "task",
-      answer: `✅ Task added: ${taskText}`
+      answer: `✅ Task added: ${taskText}`,
+      executedSteps: [
+        { name: "task_manager", status: "completed" }
+      ]
     };
   }
 
@@ -292,7 +319,10 @@ export async function routeRequest(
 
     return {
       tool: "memory",
-      answer: `🧠 Memory updated: ${memoryText}`
+      answer: `🧠 Memory updated: ${memoryText}`,
+      executedSteps: [
+        { name: "memory_lookup", status: "completed" }
+      ]
     };
   }
 
@@ -313,7 +343,10 @@ export async function routeRequest(
 
     return {
       tool: "memory",
-      answer: `🧠 Forgot: ${key}`
+      answer: `🧠 Forgot: ${key}`,
+      executedSteps: [
+        { name: "memory_lookup", status: "completed" }
+      ]
     };
   }
 
@@ -339,7 +372,10 @@ export async function routeRequest(
 
     return {
       tool: "note",
-      answer: `📝 Note saved.`
+      answer: `📝 Note saved.`,
+      executedSteps: [
+        { name: "notes", status: "completed" }
+      ]
     };
   }
 

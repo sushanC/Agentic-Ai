@@ -1,9 +1,14 @@
 import ollama from "ollama";
+import { classifyProviderError } from "../cie/ProviderErrorClassifier.js";
 
 export const ollamaProvider = {
   maxContext: 8192,
+  safetyMargin: 0.15,
   preferredContextSize: 6144,
-  preferredHistorySize: 3,
+  preferredHistoryLength: 3,
+  preferredSummaryLength: 250,
+  maxRetries: 3,
+  compressionStrategy: "history-first",
   streamingSupport: true,
   reasoningSupport: false,
   estimateTokens(text) {
@@ -28,7 +33,7 @@ export const ollamaProvider = {
 
       return response.message?.content || "";
     } catch (err) {
-      throw new Error(`[Ollama Provider Error] ${err.message}`);
+      throw classifyProviderError("ollama", err);
     }
   },
 
@@ -57,7 +62,7 @@ export const ollamaProvider = {
         }
       }
     } catch (err) {
-      throw new Error(`[Ollama Provider Error] ${err.message}`);
+      throw classifyProviderError("ollama", err);
     }
   },
 

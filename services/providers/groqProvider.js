@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { classifyProviderError } from "../cie/ProviderErrorClassifier.js";
 
 let groqClient = null;
 
@@ -11,7 +12,7 @@ function getClient() {
     groqClient = new OpenAI({
       apiKey,
       baseURL: "https://api.groq.com/openai/v1",
-      maxRetries: 3
+      maxRetries: 0 // RetryPolicyEngine handles retries
     });
   }
   return groqClient;
@@ -19,8 +20,12 @@ function getClient() {
 
 export const groqProvider = {
   maxContext: 32768,
+  safetyMargin: 0.1,
   preferredContextSize: 20000,
-  preferredHistorySize: 3,
+  preferredHistoryLength: 3,
+  preferredSummaryLength: 600,
+  maxRetries: 3,
+  compressionStrategy: "history-first",
   streamingSupport: true,
   reasoningSupport: false,
   estimateTokens(text) {
@@ -44,7 +49,7 @@ export const groqProvider = {
 
       return completion.choices[0]?.message?.content || "";
     } catch (err) {
-      throw new Error(`[Groq Provider Error] ${err.message}`);
+      throw classifyProviderError("groq", err);
     }
   },
 
@@ -72,7 +77,7 @@ export const groqProvider = {
         }
       }
     } catch (err) {
-      throw new Error(`[Groq Provider Error] ${err.message}`);
+      throw classifyProviderError("groq", err);
     }
   },
 

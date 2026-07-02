@@ -5,13 +5,23 @@
  * No model IDs or names are hardcoded outside of this file.
  * Model IDs are loaded from environment variables where possible.
  *
+ * Phase 9 additions (MSE):
+ *   - scores {}         : Per-domain capability scores (0.0–1.0)
+ *   - latencyTier       : Canonical latency tier alias (same as latency)
+ *   - offlineSupport    : Alias for supportsOffline
+ *   - streamingSupport  : Alias for supportsStreaming
+ *
+ * All Phase 9 additions are purely additive. No existing fields were modified
+ * or removed. All existing callers continue to work unchanged.
+ *
  * Every model entry contains:
  *   provider, modelId, displayName, description, capabilities[],
  *   enabled, priority, status, reserved,
  *   supportsStreaming, supportsVision, supportsReasoning, supportsLongContext,
  *   supportsToolCalling, supportsMarkdown, supportsPDF, supportsMemory,
  *   supportsPlanning, supportsWriting, supportsCoding, supportsResearch,
- *   supportsOffline, fallback, latency, contextWindow, estimatedCostPer1kTokens
+ *   supportsOffline, fallback, latency, contextWindow, estimatedCostPer1kTokens,
+ *   scores { coding, writing, planning, research, reasoning, vision, math, tool, general }
  */
 
 export const modelRegistry = {
@@ -45,8 +55,23 @@ export const modelRegistry = {
     supportsOffline: false,
     fallback: "groq",
     latency: "fast",
+    latencyTier: "fast",
     contextWindow: 1000000,
-    estimatedCostPer1kTokens: 0.00015
+    estimatedCostPer1kTokens: 0.00015,
+    // Phase 9 — Capability Scores (0.0–1.0)
+    scores: {
+      coding:    0.72,
+      writing:   0.75,
+      planning:  0.45,
+      research:  0.55,
+      reasoning: 0.50,
+      vision:    0.95,   // Best-in-class vision
+      math:      0.65,
+      tool:      0.80,
+      general:   0.90,   // Excellent general chat
+    },
+    offlineSupport: false,
+    streamingSupport: true,
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -78,8 +103,23 @@ export const modelRegistry = {
     supportsOffline: false,
     fallback: "groq",
     latency: "medium",
+    latencyTier: "medium",
     contextWindow: 64000,
-    estimatedCostPer1kTokens: 0.00027
+    estimatedCostPer1kTokens: 0.00027,
+    // Phase 9 — Capability Scores
+    scores: {
+      coding:    0.97,   // Best-in-class coding
+      writing:   0.45,
+      planning:  0.55,
+      research:  0.55,
+      reasoning: 0.92,   // Excellent reasoning
+      vision:    0.00,
+      math:      0.90,
+      tool:      0.80,
+      general:   0.70,
+    },
+    offlineSupport: false,
+    streamingSupport: true,
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -111,8 +151,23 @@ export const modelRegistry = {
     supportsOffline: false,
     fallback: "groq",
     latency: "medium",
+    latencyTier: "medium",
     contextWindow: 128000,
-    estimatedCostPer1kTokens: 0
+    estimatedCostPer1kTokens: 0,
+    // Phase 9 — Capability Scores
+    scores: {
+      coding:    0.30,
+      writing:   0.93,   // Best-in-class writing
+      planning:  0.70,
+      research:  0.78,
+      reasoning: 0.60,
+      vision:    0.00,
+      math:      0.55,
+      tool:      0.30,
+      general:   0.80,
+    },
+    offlineSupport: false,
+    streamingSupport: true,
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -144,8 +199,23 @@ export const modelRegistry = {
     supportsOffline: false,
     fallback: "gpt-oss",
     latency: "slow",
+    latencyTier: "slow",
     contextWindow: 128000,
-    estimatedCostPer1kTokens: 0
+    estimatedCostPer1kTokens: 0,
+    // Phase 9 — Capability Scores
+    scores: {
+      coding:    0.30,
+      writing:   0.40,
+      planning:  0.97,   // Best-in-class planning
+      research:  0.65,
+      reasoning: 0.95,   // Exceptional reasoning
+      vision:    0.00,
+      math:      0.80,
+      tool:      0.20,
+      general:   0.65,
+    },
+    offlineSupport: false,
+    streamingSupport: true,
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -177,8 +247,23 @@ export const modelRegistry = {
     supportsOffline: false,
     fallback: "gpt-oss",
     latency: "medium",
+    latencyTier: "medium",
     contextWindow: 131072,
-    estimatedCostPer1kTokens: 0
+    estimatedCostPer1kTokens: 0,
+    // Phase 9 — Capability Scores
+    scores: {
+      coding:    0.35,
+      writing:   0.50,
+      planning:  0.40,
+      research:  0.95,   // Best-in-class research
+      reasoning: 0.55,
+      vision:    0.60,
+      math:      0.65,
+      tool:      0.65,
+      general:   0.75,
+    },
+    offlineSupport: false,
+    streamingSupport: true,
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -210,8 +295,23 @@ export const modelRegistry = {
     supportsOffline: false,
     fallback: "ollama",
     latency: "very_fast",
+    latencyTier: "very_fast",
     contextWindow: 32768,
-    estimatedCostPer1kTokens: 0.00059
+    estimatedCostPer1kTokens: 0.00059,
+    // Phase 9 — Capability Scores
+    scores: {
+      coding:    0.72,
+      writing:   0.68,
+      planning:  0.35,
+      research:  0.40,
+      reasoning: 0.55,
+      vision:    0.00,
+      math:      0.78,
+      tool:      0.88,   // Excellent tool-calling
+      general:   0.82,   // Very good general chat at great speed
+    },
+    offlineSupport: false,
+    streamingSupport: true,
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -243,8 +343,23 @@ export const modelRegistry = {
     supportsOffline: false,
     fallback: null,
     latency: "unknown",
+    latencyTier: "unknown",
     contextWindow: 128000,
-    estimatedCostPer1kTokens: 0
+    estimatedCostPer1kTokens: 0,
+    // Phase 9 — Capability Scores (experimental — not used in routing)
+    scores: {
+      coding:    0.50,
+      writing:   0.50,
+      planning:  0.50,
+      research:  0.50,
+      reasoning: 0.50,
+      vision:    0.00,
+      math:      0.50,
+      tool:      0.00,
+      general:   0.50,
+    },
+    offlineSupport: false,
+    streamingSupport: true,
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -276,8 +391,23 @@ export const modelRegistry = {
     supportsOffline: true,
     fallback: null,
     latency: "variable",
+    latencyTier: "variable",
     contextWindow: 8192,
-    estimatedCostPer1kTokens: 0
+    estimatedCostPer1kTokens: 0,
+    // Phase 9 — Capability Scores
+    scores: {
+      coding:    0.40,
+      writing:   0.40,
+      planning:  0.25,
+      research:  0.30,
+      reasoning: 0.35,
+      vision:    0.00,
+      math:      0.40,
+      tool:      0.10,
+      general:   0.55,
+    },
+    offlineSupport: true,
+    streamingSupport: true,
   }
 };
 

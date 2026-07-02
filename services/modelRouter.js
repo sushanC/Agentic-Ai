@@ -1,174 +1,97 @@
-import { resolveCapabilityWithOverride } from "./modelRegistry.js";
+/**
+ * modelRouter.js — Thin Adapter (v3 — MSE Integration)
+ *
+ * This module is now a thin adapter. Its ONLY job is:
+ *  1. Translate tool context (pdf, web, memory, agent) into capability context
+ *  2. Delegate all model selection to the Model Selection Engine (MSE)
+ *
+ * v3 changes (MSE integration):
+ *  - ALL keyword-based routing removed. Message content is no longer parsed here.
+ *  - Message understanding is exclusively the IntentDetector's responsibility.
+ *  - Model selection is exclusively the MSE's responsibility.
+ *  - decideModel() is now async (calls detectIntentFull → selectModel).
+ *  - Signature change: healthScores param removed (MSE manages its own health).
+ *  - Backward compatible: callers that await decideModel() work unchanged.
+ *
+ * Architecture:
+ *   Tool Context (pdf/web/memory/agent)
+ *       ↓ translated to tool string
+ *   IntentDetector.detectIntentFull(message, tool, settings)
+ *       ↓ { intent, confidence, secondaryIntent }
+ *   MSE.selectModel({ intent, confidence, secondaryIntent, overrides })
+ *       ↓
+ *   Model config with matchedCapability
+ *
+ * Phase 10 compliance:
+ *  - This module knows NOTHING about provider implementations.
+ *  - Adding a new model requires ONLY registry registration.
+ *  - No model-specific logic here.
+ */
+
+import { detectIntentFull } from "./cie/IntentDetector.js";
+import { selectModel } from "./modelSelection/index.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool → intent override map
+// These tools bypass IntentDetector because the tool context is unambiguous.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TOOL_INTENT_OVERRIDES = Object.freeze({
+  pdf:      "PDF",
+  web:      "WebSearch",
+  memory:   "Memory",
+  agent:    "AgentWorkflow",
+  planning: "AgentWorkflow",
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public: decideModel (async — Phase 2/6)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * modelRouter.js
+ * Decide which model to use for a given message and tool context.
  *
- * Decides which AI model to use based on capabilities.
- * Maps tools and messages to capabilities, then returns the resolved registry object.
- * All model selection goes through the Model Registry — no hardcoded provider/model names.
+ * All model selection is delegated to the Model Selection Engine.
+ * No keyword parsing. No routing logic. No scoring.
  *
- * Capabilities:
- *   general_chat
- *   coding
- *   research
- *   writing
- *   planning
- *   reasoning
- *   math
- *   vision
- *   pdf
- *   memory_extraction
- *   web_search
- *   agent_planning
- *   tool_calling
- *   offline
+ * @param {string} message   - User message (passed to IntentDetector)
+ * @param {string} tool      - Active tool ("chat", "pdf", "web", "memory", "agent", "planning")
+ * @param {object} overrides - User capability route overrides from settings
+ * @param {object} [_healthScores] - Deprecated: ignored. MSE uses per-model health internally.
+ * @param {object} [settings] - User settings (forwarded to IntentDetector)
+ * @returns {Promise<object>} Resolved model config with matchedCapability
  */
-export function decideModel(
+export async function decideModel(
   message = "",
   tool = "chat",
-  overrides = {}
+  overrides = {},
+  _healthScores = {},  // Kept for backward compatibility — intentionally ignored
+  settings = {}
 ) {
+  // 1. Resolve intent
+  //    Tool overrides take highest priority (tool context is unambiguous).
+  //    For "chat" tool, IntentDetector determines intent from message content.
+  let intent, confidence, secondaryIntent;
 
-  // Helper: resolve capability → model, checking user overrides first
-  const resolve = (capability) => {
-    const modelConfig = resolveCapabilityWithOverride(capability, overrides);
-    return { ...modelConfig, matchedCapability: capability };
-  };
-
-  // =====================
-  // TOOL-BASED ROUTING
-  // (highest priority — always wins)
-  // =====================
-
-  if (tool === "pdf") {
-    return resolve("pdf");
+  const toolOverride = TOOL_INTENT_OVERRIDES[tool];
+  if (toolOverride) {
+    intent          = toolOverride;
+    confidence      = 1.0;
+    secondaryIntent = null;
+  } else {
+    const intentResult = await detectIntentFull(message, tool, settings);
+    intent          = intentResult.intent;
+    confidence      = intentResult.confidence;
+    secondaryIntent = intentResult.secondaryIntent;
   }
 
-  if (tool === "web") {
-    return resolve("web_search");
-  }
+  // 2. Delegate to MSE — single authoritative decision maker
+  const { selected } = selectModel({
+    intent,
+    confidence,
+    secondaryIntent,
+    overrides,
+  });
 
-  if (tool === "memory") {
-    return resolve("memory_extraction");
-  }
-
-  if (
-    tool === "agent" ||
-    tool === "planning"
-  ) {
-    return resolve("agent_planning");
-  }
-
-  // =====================
-  // KEYWORD-BASED ROUTING
-  // (used when tool === "chat")
-  // =====================
-
-  const text = String(message).toLowerCase();
-
-  // Vision / image analysis
-  if (
-    text.includes("image") ||
-    text.includes("photo") ||
-    text.includes("picture") ||
-    text.includes("screenshot") ||
-    text.includes("describe this") ||
-    text.includes("look at") ||
-    text.includes("what do you see")
-  ) {
-    return resolve("vision");
-  }
-
-  // Planning / strategy
-  if (
-    text.includes("plan") ||
-    text.includes("roadmap") ||
-    text.includes("strategy") ||
-    text.includes("research and save")
-  ) {
-    return resolve("planning");
-  }
-
-  // Coding / debugging
-  if (
-    text.includes("code") ||
-    text.includes("program") ||
-    text.includes("java") ||
-    text.includes("python") ||
-    text.includes("javascript") ||
-    text.includes("typescript") ||
-    text.includes("react") ||
-    text.includes("node") ||
-    text.includes("sql") ||
-    text.includes("bug") ||
-    text.includes("error") ||
-    text.includes("debug") ||
-    text.includes("function") ||
-    text.includes("algorithm")
-  ) {
-    return resolve("coding");
-  }
-
-  // Writing assistance (email drafting, essays, etc.)
-  if (
-    text.includes("write") ||
-    text.includes("draft") ||
-    text.includes("compose") ||
-    text.includes("email") ||
-    text.includes("essay")
-  ) {
-    return resolve("writing");
-  }
-
-  // Research / analysis / comparison / summarization / long explanations
-  if (
-    text.includes("research") ||
-    text.includes("analyze") ||
-    text.includes("find out") ||
-    text.includes("compare") ||
-    text.includes("comparison") ||
-    text.includes("versus") ||
-    text.includes(" vs ") ||
-    text.includes("summarize") ||
-    text.includes("summary") ||
-    text.includes("explain in detail") ||
-    text.includes("technical documentation") ||
-    text.includes("long explanation")
-  ) {
-    return resolve("research");
-  }
-
-  // Web / live information
-  if (
-    text.includes("search online") ||
-    text.includes("find online") ||
-    text.includes("search the web") ||
-    text.includes("look up")
-  ) {
-    return resolve("web_search");
-  }
-
-  // Math
-  if (
-    text.includes("gcd") ||
-    text.includes("lcm") ||
-    text.includes("equation") ||
-    text.includes("factorial") ||
-    text.includes("prime") ||
-    text.includes("calculate") ||
-    text.includes("compute")
-  ) {
-    return resolve("math");
-  }
-
-  // Offline / local
-  if (
-    text.includes("offline") ||
-    text.includes("local mode")
-  ) {
-    return resolve("offline");
-  }
-
-  // Default general chat
-  return resolve("general_chat");
+  return selected;
 }

@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { classifyProviderError } from "../cie/ProviderErrorClassifier.js";
 
 let aiClient = null;
 
@@ -15,8 +16,12 @@ function getClient() {
 
 export const googleProvider = {
   maxContext: 1000000,
+  safetyMargin: 0.05,
   preferredContextSize: 100000,
-  preferredHistorySize: 10,
+  preferredHistoryLength: 15,
+  preferredSummaryLength: 1500,
+  maxRetries: 3,
+  compressionStrategy: "history-first",
   streamingSupport: true,
   reasoningSupport: false,
   estimateTokens(text) {
@@ -36,7 +41,7 @@ export const googleProvider = {
       });
       return response.text;
     } catch (err) {
-      throw new Error(`[Google Provider Error] ${err.message}`);
+      throw classifyProviderError("google", err);
     }
   },
 
@@ -58,7 +63,7 @@ export const googleProvider = {
         }
       }
     } catch (err) {
-      throw new Error(`[Google Provider Error] ${err.message}`);
+      throw classifyProviderError("google", err);
     }
   },
 

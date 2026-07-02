@@ -24,6 +24,8 @@ export async function executeActions(plan) {
   }
 
   const results = [];
+  const steps = [];
+  results.steps = steps;
 
   console.log("\n⚙️ EXECUTING PLAN (Tool Registry Framework):");
   console.log(JSON.stringify(plan, null, 2));
@@ -31,6 +33,9 @@ export async function executeActions(plan) {
   for (const action of plan.actions) {
     console.log("\n▶ ACTION:");
     console.log(action);
+
+    // Push step onto tracker
+    steps.push({ name: action.tool, status: "completed" });
 
     try {
       const result = await registry.executeTool(action);
@@ -56,13 +61,16 @@ export async function executeActions(plan) {
 
         // Return immediately — any remaining plan actions are NOT executed.
         // Execution resumes when the user provides the missing info or confirms.
-        return [result];
+        results.push(result);
+        return results;
       }
       // ─────────────────────────────────────────────────────────────────────
 
       results.push(result);
     } catch (err) {
       console.error(`Error executing tool "${action.tool}":`, err);
+      const lastStep = steps[steps.length - 1];
+      if (lastStep) lastStep.status = "failed";
       results.push(`❌ Action failed: ${action.tool}`);
     }
   }

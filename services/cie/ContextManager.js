@@ -81,9 +81,46 @@ export const INTENT_CONFIGS = {
     semanticMemoryOnly: true,
     summaryLevel: "Medium",
     historyLimit: 8
+  },
+  Summary: {
+    includeMemory: false,
+    summaryLevel: "None",
+    historyLimit: 100
+  },
+  MemoryExtraction: {
+    includeMemory: false,
+    summaryLevel: "None",
+    historyLimit: 0
+  },
+  ActionPlanning: {
+    includeMemory: false,
+    summaryLevel: "None",
+    historyLimit: 0
+  },
+  ToolRouting: {
+    includeMemory: false,
+    summaryLevel: "None",
+    historyLimit: 0
+  },
+  EmailDraft: {
+    includeMemory: true,
+    memoryKeys: ["contacts", "name", "user_name"],
+    summaryLevel: "Short",
+    historyLimit: 4
+  },
+  EmailExtraction: {
+    includeMemory: false,
+    summaryLevel: "None",
+    historyLimit: 0
   }
 };
 
 export function getContextConfig(intent) {
-  return INTENT_CONFIGS[intent] || INTENT_CONFIGS.GeneralChat;
+  // Normalize intent names in case they match tool names
+  const normalized = intent === "summary" ? "Summary" :
+                     intent === "memory_extraction" ? "MemoryExtraction" :
+                     intent === "planning" ? "Planning" :
+                     intent === "agent" ? "AgentWorkflow" :
+                     intent;
+  return INTENT_CONFIGS[normalized] || INTENT_CONFIGS.GeneralChat;
 }

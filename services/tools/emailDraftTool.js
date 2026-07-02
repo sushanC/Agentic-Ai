@@ -1,7 +1,7 @@
 import { createPending } from "../confirmationService.js";
 import { addActivity } from "../../storage/activityStorage.js";
 import { sendEmail } from "../gmailService.js";
-import { askGroq } from "../ai.js";
+import { askModelCie } from "../ai.js";
 import { loadMemory, saveMemory } from "../../storage/memoryStorage.js";
 
 /**
@@ -129,36 +129,7 @@ async function saveContact(name, email) {
  * @returns {Promise<object>} - Extracted fields object
  */
 async function extractEmailFields(userInput) {
-  const prompt = `You are a structured email field extractor.
-
-Extract the following JSON fields from the user's email request.
-
-STRICT RULES:
-- Return ONLY valid JSON. Never use markdown. Never return code fences. Never explain.
-- NEVER invent, guess, or fabricate email addresses.
-- If the recipient's email address is NOT explicitly stated in the request, return "" for recipientEmail.
-- Generate a complete, professional email body with a proper greeting and closing based on the context.
-- If cc or bcc are not mentioned, return empty arrays [].
-- If signature is not mentioned, return "".
-- recipientName should be the name or role of the recipient (e.g. "Professor", "John Smith", "Boss").
-
-JSON schema to extract:
-{
-  "recipientName": "string",
-  "recipientEmail": "string — ONLY if explicitly provided in the request, otherwise empty string",
-  "subject": "string — concise professional subject line",
-  "body": "string — complete professional email body with greeting and sign-off",
-  "cc": ["array of cc emails if mentioned, otherwise []"],
-  "bcc": ["array of bcc emails if mentioned, otherwise []"],
-  "signature": "string — if mentioned, otherwise empty string"
-}
-
-User request:
-${userInput}
-
-JSON only:`;
-
-  const raw = await askGroq(prompt);
+  const raw = await askModelCie("groq", userInput, "EmailExtraction");
 
   const cleaned = raw
     .replace(/```json/gi, "")

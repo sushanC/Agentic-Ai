@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { classifyProviderError } from "../cie/ProviderErrorClassifier.js";
 
 let openrouterClient = null;
 
@@ -11,7 +12,7 @@ function getClient() {
     openrouterClient = new OpenAI({
       apiKey,
       baseURL: "https://openrouter.ai/api/v1",
-      maxRetries: 3
+      maxRetries: 0 // RetryPolicyEngine handles retries
     });
   }
   return openrouterClient;
@@ -19,8 +20,12 @@ function getClient() {
 
 export const openRouterProvider = {
   maxContext: 128000,
+  safetyMargin: 0.1,
   preferredContextSize: 64000,
-  preferredHistorySize: 5,
+  preferredHistoryLength: 5,
+  preferredSummaryLength: 600,
+  maxRetries: 3,
+  compressionStrategy: "history-first",
   streamingSupport: true,
   reasoningSupport: false,
   estimateTokens(text) {
@@ -44,7 +49,7 @@ export const openRouterProvider = {
 
       return completion.choices[0]?.message?.content || "";
     } catch (err) {
-      throw new Error(`[OpenRouter Provider Error] ${err.message}`);
+      throw classifyProviderError("openrouter", err);
     }
   },
 
@@ -72,7 +77,7 @@ export const openRouterProvider = {
         }
       }
     } catch (err) {
-      throw new Error(`[OpenRouter Provider Error] ${err.message}`);
+      throw classifyProviderError("openrouter", err);
     }
   },
 

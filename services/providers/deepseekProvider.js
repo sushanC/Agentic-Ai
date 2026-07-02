@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { classifyProviderError } from "../cie/ProviderErrorClassifier.js";
 
 let deepseekClient = null;
 
@@ -11,7 +12,7 @@ function getClient() {
     deepseekClient = new OpenAI({
       apiKey,
       baseURL: "https://api.deepseek.com",
-      maxRetries: 3
+      maxRetries: 0 // RetryPolicyEngine handles retries
     });
   }
   return deepseekClient;
@@ -19,8 +20,12 @@ function getClient() {
 
 export const deepseekProvider = {
   maxContext: 64000,
+  safetyMargin: 0.1,
   preferredContextSize: 32000,
-  preferredHistorySize: 3,
+  preferredHistoryLength: 3,
+  preferredSummaryLength: 600,
+  maxRetries: 3,
+  compressionStrategy: "history-first",
   streamingSupport: true,
   reasoningSupport: true,
   estimateTokens(text) {
@@ -44,7 +49,7 @@ export const deepseekProvider = {
 
       return completion.choices[0]?.message?.content || "";
     } catch (err) {
-      throw new Error(`[DeepSeek Provider Error] ${err.message}`);
+      throw classifyProviderError("deepseek", err);
     }
   },
 
@@ -72,7 +77,7 @@ export const deepseekProvider = {
         }
       }
     } catch (err) {
-      throw new Error(`[DeepSeek Provider Error] ${err.message}`);
+      throw classifyProviderError("deepseek", err);
     }
   },
 

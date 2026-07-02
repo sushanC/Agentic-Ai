@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { classifyProviderError } from "../cie/ProviderErrorClassifier.js";
 
 let glmClient = null;
 
@@ -11,7 +12,7 @@ function getClient() {
     glmClient = new OpenAI({
       apiKey,
       baseURL: "https://open.bigmodel.cn/api/paas/v4",
-      maxRetries: 3
+      maxRetries: 0 // RetryPolicyEngine handles retries
     });
   }
   return glmClient;
@@ -19,8 +20,12 @@ function getClient() {
 
 export const glmProvider = {
   maxContext: 128000,
+  safetyMargin: 0.1,
   preferredContextSize: 64000,
-  preferredHistorySize: 5,
+  preferredHistoryLength: 5,
+  preferredSummaryLength: 600,
+  maxRetries: 3,
+  compressionStrategy: "history-first",
   streamingSupport: true,
   reasoningSupport: false,
   estimateTokens(text) {
@@ -44,7 +49,7 @@ export const glmProvider = {
 
       return completion.choices[0]?.message?.content || "";
     } catch (err) {
-      throw new Error(`[GLM Provider Error] ${err.message}`);
+      throw classifyProviderError("glm", err);
     }
   },
 
@@ -72,7 +77,7 @@ export const glmProvider = {
         }
       }
     } catch (err) {
-      throw new Error(`[GLM Provider Error] ${err.message}`);
+      throw classifyProviderError("glm", err);
     }
   },
 
