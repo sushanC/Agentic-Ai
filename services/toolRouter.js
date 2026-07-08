@@ -15,6 +15,8 @@ import {
   incrementStat
 } from "../storage/statsStorage.js";
 
+import { emitDevEvent, beginRequest } from "./developerBridge.js";
+
 /**
  * Find the best matching PDF for a question.
  *
@@ -101,6 +103,9 @@ export async function routeRequest(
 
   const text = message.toLowerCase();
 
+  // Developer Console: emit intent at route entry
+  emitDevEvent('IntentDetected', { intent: 'routing', tool: 'router', userPrompt: message });
+
   // =====================
   // AGENT MODE
   // =====================
@@ -109,6 +114,7 @@ export async function routeRequest(
 
     console.log("\n🚀 AGENT MODE");
 
+    emitDevEvent('ToolStarted', { tool: 'agent', stage: 'planning' });
     const { planActions } =
       await import("./actionPlanner.js");
     const { executeActions } =
@@ -120,6 +126,7 @@ export async function routeRequest(
     console.log(JSON.stringify(plan, null, 2));
 
     const results = await executeActions(plan);
+    emitDevEvent('ToolFinished', { tool: 'agent', stage: 'execution' });
 
     // ── Confirmation Intercept (Phase 3) ───────────────────────────────────
     // If any result is a pending_confirmation object, surface it to the

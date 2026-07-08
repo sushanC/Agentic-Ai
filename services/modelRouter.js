@@ -30,6 +30,7 @@
 
 import { detectIntentFull } from "./cie/IntentDetector.js";
 import { selectModel } from "./modelSelection/index.js";
+import { emitDevEvent } from "./developerBridge.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool → intent override map
@@ -86,12 +87,21 @@ export async function decideModel(
   }
 
   // 2. Delegate to MSE — single authoritative decision maker
-  const { selected } = selectModel({
+  const { selected, diagnostics } = selectModel({
     intent,
     confidence,
     secondaryIntent,
     overrides,
   });
+
+  // Emit to developer console
+  if (diagnostics) {
+    emitDevEvent('ModelSelected', {
+      selected:  diagnostics.selected,
+      candidates: diagnostics.candidates,
+      reason:     diagnostics.reason,
+    });
+  }
 
   return selected;
 }

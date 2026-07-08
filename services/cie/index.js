@@ -5,6 +5,7 @@ import { getCompressedSummary } from "./SummaryManager.js";
 import { optimizeContext } from "./TokenBudgetManager.js";
 import { buildPrompt } from "./PromptBuilder.js";
 import { buildSummaryContext } from "./SummaryContextBuilder.js";
+import { emitDevEvent } from "../developerBridge.js";
 
 export {
   detectIntent,
@@ -65,6 +66,33 @@ export async function runCiePipeline(
     settings,
     intent
   });
+
+  // ── Developer Console Events ──
+  try {
+    emitDevEvent('MemoryRetrieved', {
+      keys:       Object.keys(memory || {}).filter(k => k !== '_scores'),
+      scores:     memory?._scores || {},
+      injected:   optimizationResult.memoryKeys || [],
+      rawMemory:  memory || {}
+    });
+
+    emitDevEvent('PromptBuilt', {
+      systemPrompt,
+      memoryBlock:  memory && Object.keys(memory).length > 0
+        ? `User Profile:\n\n${JSON.stringify(memory, null, 2)}`
+        : "",
+      summaryBlock: summary || "",
+      historyBlock: history && history.length > 0
+        ? history.map(m => `${m.role}: ${m.content}`).join("\n")
+        : "",
+      pdfContext:   pdfContext || "",
+      finalPrompt:  optimizationResult.promptText,
+      estimatedTokens: optimizationResult.estimatedTokens,
+      tokenBreakdown: optimizationResult.tokenBreakdown,
+    });
+  } catch (err) {
+    // Silent fail for developer events
+  }
 
   return {
     intent,
