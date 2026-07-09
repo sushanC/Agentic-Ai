@@ -29,8 +29,10 @@ export function logRequest({
   healthScore = null,
   fallbackChain = []
 }) {
-  const latencyStr = (latencyMs / 1000).toFixed(2) + " s";
-  const memoryKeysStr = memoryKeys.length > 0 ? memoryKeys.join(", ") : "None";
+const latencyStr =
+((latencyMs ?? 0)/1000)
+.toFixed(2)+" s"; 
+const memoryKeysStr = memoryKeys.length > 0 ? memoryKeys.join(", ") : "None";
 
   // Extract memory relevance scores
   const scoresMap = rawMemory ? (rawMemory._scores || {}) : {};
