@@ -4,21 +4,31 @@ import { deepseekProvider } from "./providers/deepseekProvider.js";
 import { glmProvider } from "./providers/glmProvider.js";
 import { openRouterProvider } from "./providers/openRouterProvider.js";
 import { ollamaProvider } from "./providers/ollamaProvider.js";
-import { resolveModel } from "./modelRegistry.js";
+
+import { resolveModel, getModel } from "./modelRegistry.js";
 import { SYSTEM_PROMPT } from "./systemPrompt.js";
 import { cleanResponse } from "./responseCleaner.js";
 import { decideModel } from "./modelRouter.js";
 import { loadSettings } from "../storage/settingsStorage.js";
-import { runCiePipeline } from "./cie/index.js";
+
+// Import Context Intelligence Engine
+import { runCiePipeline, buildPrompt } from "./cie/index.js";
+
+// Import new production-hardening modules
 import { evaluate as evaluateRetryPolicy, RetryAction, logPolicyDecision } from "./cie/RetryPolicyEngine.js";
 import { recordSuccess, recordFailure, getHealthScore } from "./cie/ProviderHealthManager.js";
+
+// MSE Phase 6 — Per-model health tracking (parallel to provider health)
 import { recordModelSuccess, recordModelFailure } from "./modelSelection/index.js";
-import { emitDevEvent, beginRequest } from "./developerBridge.js";
-import { compressContext } from "./ai/ContextCompressor.js";
-import { getProvider } from "./ai/ProviderManager.js";
-import { logRequest } from "./ai/AIRequestLogger.js";
 
-
+const providers = {
+  google: googleProvider,
+  groq: groqProvider,
+  deepseek: deepseekProvider,
+  glm: glmProvider,
+  openrouter: openRouterProvider,
+  ollama: ollamaProvider
+};
 
 let lastModelUsed = {
   name: "gemini",
@@ -31,8 +41,224 @@ export function getLastModelUsed() {
   return lastModelUsed;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Context Quality Score
+// ─────────────────────────────────────────────────────────────────────────────
+function calculateContextQuality({
+  intent,
+  provider,
+  memoryKeys,
+  rawMemory,
+  historyCount,
+  rawHistory,
+  summarySize,
+  rawSummary,
+  estimatedTokens,
+  maxBudget,
+  compressionApplied
+}) {
+  let memoryScore = 1.0;
+  if (rawMemory) {
+    const rawMemoryKeys = Object.keys(rawMemory || {});
+    if (rawMemoryKeys.length > 0) {
+      memoryScore = memoryKeys.length / rawMemoryKeys.length;
+    }
+  }
+
+  let historyScore = 1.0;
+  const preferredHistory = provider.preferredHistoryLength || 5;
+  if (rawHistory && rawHistory.length > 0) {
+    historyScore = historyCount / Math.min(rawHistory.length, preferredHistory);
+  }
+
+  let summaryScore = 1.0;
+  if (rawSummary && rawSummary.length > 0) {
+    summaryScore = summarySize / rawSummary.length;
+  }
+
+  let tokenUtilization = 1.0;
+  if (maxBudget && maxBudget > 0) {
+    tokenUtilization = Math.min(estimatedTokens / maxBudget, 1.0);
+  }
+
+  const completeness = compressionApplied ? 0.8 : 1.0;
+
+  const score = (
+    memoryScore * 0.2 +
+    historyScore * 0.2 +
+    summaryScore * 0.2 +
+    tokenUtilization * 0.2 +
+    completeness * 0.2
+  );
+
+  return Math.round(score * 100);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Structured Diagnostic Logger (Phase 3 + Phase 8)
+// ─────────────────────────────────────────────────────────────────────────────
+function logCieUsage({
+  intent,
+  memoryKeys = [],
+  rawMemory = {},
+  historyCount = 0,
+  rawHistory = [],
+  summaryLevel = "None",
+  summarySize = 0,
+  rawSummary = "",
+  estimatedTokens = 0,
+  compressionApplied = false,
+  finalPromptSize = 0,
+  providerName,
+  modelDisplayName,
+  latencyMs,
+  fallbackOccurred = false,
+  retryCount = 0,
+  provider,
+  maxBudget,
+  tokenBreakdown = {},
+  healthScore = null,
+  fallbackChain = []
+}) {
+  const latencyStr = (latencyMs / 1000).toFixed(2) + " s";
+  const memoryKeysStr = memoryKeys.length > 0 ? memoryKeys.join(", ") : "None";
+
+  // Extract memory relevance scores
+  const scoresMap = rawMemory ? (rawMemory._scores || {}) : {};
+  const scoresStr = Object.entries(scoresMap)
+    .map(([k, v]) => `${k} (${v.toFixed(2)})`)
+    .join(", ") || "None";
+
+  // Context percentage
+  const contextPct = provider?.maxContext
+    ? ((estimatedTokens / provider.maxContext) * 100).toFixed(2) + "%"
+    : "N/A";
+  const remaining = provider?.maxContext
+    ? (provider.maxContext - estimatedTokens).toLocaleString()
+    : "N/A";
+
+  // Calculate Context Quality Score
+  const qualityScore = calculateContextQuality({
+    intent, provider, memoryKeys, rawMemory, historyCount, rawHistory,
+    summarySize, rawSummary, estimatedTokens, maxBudget, compressionApplied
+  });
+
+  const {
+    systemTokens = 0,
+    memoryTokens = 0,
+    historyTokens = 0,
+    summaryTokens = 0,
+    pdfTokens = 0,
+    userTokens = 0,
+  } = tokenBreakdown;
+
+  const healthStr = healthScore !== null ? `${(healthScore * 100).toFixed(0)}%` : "N/A";
+  const fallbackStr = fallbackOccurred
+    ? (fallbackChain.length > 0 ? fallbackChain.join(" → ") : "Yes")
+    : "No";
+
+  console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log(`  Intent           : ${intent}`);
+  console.log(`  Provider         : ${providerName} (${modelDisplayName})`);
+  console.log(`  Provider Health  : ${healthStr}`);
+  console.log(`  Memory Keys      : ${memoryKeysStr}`);
+  console.log(`  Memory Relevance : ${scoresStr}`);
+  console.log(`  History Msgs     : ${historyCount}`);
+  console.log(`  Summary Mode     : ${summaryLevel}`);
+  console.log("  ─────────────────────────────────────────────────────────");
+  console.log(`  Prompt           : ${finalPromptSize.toLocaleString()} chars`);
+  console.log(`  Estimated Tokens : ${estimatedTokens.toLocaleString()}`);
+  console.log(`    ├─ System      : ${systemTokens}`);
+  console.log(`    ├─ Memory      : ${memoryTokens}`);
+  console.log(`    ├─ History     : ${historyTokens}`);
+  console.log(`    ├─ Summary     : ${summaryTokens}`);
+  console.log(`    ├─ PDF         : ${pdfTokens}`);
+  console.log(`    └─ User        : ${userTokens}`);
+  console.log(`  Context %        : ${contextPct}`);
+  console.log(`  Remaining        : ${remaining}`);
+  console.log("  ─────────────────────────────────────────────────────────");
+  console.log(`  Compression      : ${compressionApplied ? "Yes" : "No"}`);
+  console.log(`  Retry Count      : ${retryCount}`);
+  console.log(`  Fallback         : ${fallbackStr}`);
+  console.log(`  Context Quality  : ${qualityScore}%`);
+  console.log(`  Latency          : ${latencyStr}`);
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Context Compression Helper
+// ─────────────────────────────────────────────────────────────────────────────
+function compressCieResult(cieResult, provider, userPrompt, systemPrompt, pdfContext) {
+  let { rawHistory = [], rawSummary = "", rawMemory = {}, historyCount = 0, memoryKeys = [], intent } = cieResult;
+
+  if (historyCount > 0) {
+    // 1. Trim history
+    rawHistory = rawHistory.slice(1);
+    historyCount = rawHistory.length;
+  } else if (rawSummary && rawSummary.length > 0) {
+    // 2. Compress summary
+    if (rawSummary.length > 100) {
+      rawSummary = rawSummary.slice(0, Math.floor(rawSummary.length / 2)) + "...";
+    } else {
+      rawSummary = "";
+    }
+  } else if (memoryKeys && memoryKeys.length > 0) {
+    // 3. Reduce memory
+    const newKeys = memoryKeys.slice(0, -1);
+    const newMemory = {};
+    newKeys.forEach(k => {
+      if (rawMemory[k] !== undefined) {
+        newMemory[k] = rawMemory[k];
+      }
+    });
+    rawMemory = newMemory;
+    memoryKeys = newKeys;
+  }
+
+  // Preserve scores property
+  if (cieResult.rawMemory && cieResult.rawMemory._scores) {
+    Object.defineProperty(rawMemory, "_scores", {
+      value: cieResult.rawMemory._scores,
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
+  }
+
+  const promptText = buildPrompt({
+    userPrompt,
+    memory: rawMemory,
+    history: rawHistory,
+    summary: rawSummary,
+    pdfContext,
+    intent
+  });
+
+  const totalText = (systemPrompt ? systemPrompt + "\n\n" : "") + promptText;
+  const estimatedTokens = provider.estimateTokens(totalText);
+
+  return {
+    ...cieResult,
+    rawHistory,
+    rawSummary,
+    rawMemory,
+    historyCount,
+    memoryKeys,
+    promptText,
+    estimatedTokens,
+    summarySize: rawSummary ? rawSummary.length : 0,
+    compressionApplied: true
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// executeWithCie — Core CIE + RetryPolicyEngine execution loop (Phase 2)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Centrally executes a CIE pipeline and provider call with RetryPolicyEngine-driven
+ * compression/retry/fallback logic.
+ *
  * @param {object} params
  * @param {string} params.prompt
  * @param {string} params.tool
@@ -58,7 +284,11 @@ export async function executeWithCie({
   let compressionApplied = false;
   let response = null;
 
-  const providerKey = provider.providerKey;
+  // Extract provider key from any provider object
+  const providerKey = Object.entries({
+    google: googleProvider, groq: groqProvider, deepseek: deepseekProvider,
+    glm: glmProvider, openrouter: openRouterProvider, ollama: ollamaProvider
+  }).find(([, p]) => p === provider)?.[0] || "unknown";
 
   while (true) {
     const startTime = Date.now();
@@ -68,6 +298,7 @@ export async function executeWithCie({
         temperature: settings.temperature,
         maxTokens: settings.maxTokens
       });
+      recordSuccess(providerKey, Date.now() - startTime);
       break; // Success!
     } catch (err) {
       const decision = evaluateRetryPolicy({
@@ -84,7 +315,7 @@ export async function executeWithCie({
       if (decision.action === RetryAction.COMPRESS) {
         retryCount++;
         compressionApplied = true;
-        cieResult = compressContext(cieResult, provider, prompt, systemPrompt, pdfContext);
+        cieResult = compressCieResult(cieResult, provider, prompt, systemPrompt, pdfContext);
         continue;
       }
 
@@ -102,101 +333,13 @@ export async function executeWithCie({
   return { response, cieResult, retryCount, compressionApplied };
 }
 
-function getCurrentProvider(modelConfig) {
-    return getProvider(modelConfig.provider);
-}
-
-function recordFailureForModel(modelConfig, error) {
-
-    recordFailure(
-        modelConfig.provider,
-        error
-    );
-
-    recordModelFailure(
-        modelConfig.name ||
-        modelConfig.provider,
-        error
-    );
-
-}
-function recordSuccessForModel(modelConfig, latency) {
-
-    recordSuccess(
-        modelConfig.provider,
-        latency
-    );
-
-    recordModelSuccess(
-        modelConfig.name || modelConfig.provider,
-        latency
-    );
-
-}
-function logExecution({
-    modelConfig,
-    cieResult,
-    latencyMs,
-    retryCount,
-    compressionApplied,
-    fallbackOccurred,
-    fallbackChain
-}) {
-
-    const provider = getCurrentProvider(modelConfig);
-
-    logRequest({
-
-        intent: cieResult.intent,
-
-        memoryKeys: cieResult.memoryKeys,
-
-        rawMemory: cieResult.rawMemory,
-
-        historyCount: cieResult.historyCount,
-
-        rawHistory: cieResult.rawHistory,
-
-        summaryLevel: cieResult.summaryLevel || "None",
-
-        summarySize: cieResult.summarySize,
-
-        rawSummary: cieResult.rawSummary,
-
-        estimatedTokens: cieResult.estimatedTokens,
-
-        compressionApplied,
-
-        finalPromptSize: cieResult.promptText.length,
-
-        providerName: modelConfig.provider,
-
-        modelDisplayName: modelConfig.displayName,
-
-        latencyMs,
-
-        fallbackOccurred,
-
-        retryCount,
-
-        provider,
-
-        maxBudget: cieResult.maxBudget,
-
-        tokenBreakdown: cieResult.tokenBreakdown || {},
-
-        healthScore: getHealthScore(modelConfig.provider),
-
-        fallbackChain
-
-    });
-
-}
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Named ask helpers (routing through CIE)
+// ─────────────────────────────────────────────────────────────────────────────
 export async function askModelCie(modelName, prompt, intent = "GeneralChat") {
   const settings = await loadSettings();
   const modelConfig = resolveModel(modelName);
- const provider = getProvider(modelConfig.provider);
+  const provider = providers[modelConfig.provider];
 
   let finalModelConfig = modelConfig;
   lastModelUsed = finalModelConfig;
@@ -230,7 +373,7 @@ export async function askModelCie(modelName, prompt, intent = "GeneralChat") {
       console.log(`\n🔄 Primary provider failed. Falling back to ${finalModelConfig.provider} (${finalModelConfig.modelId})...`);
       fallbackChain.push(finalModelConfig.provider);
 
-      const fallbackProvider = getProvider(finalModelConfig.provider);
+      const fallbackProvider = providers[finalModelConfig.provider];
 
       const result = await executeWithCie({
         prompt,
@@ -253,15 +396,30 @@ export async function askModelCie(modelName, prompt, intent = "GeneralChat") {
   let endTime = Date.now();
   let latencyMs = endTime - startTime;
 
-logExecution({
-    modelConfig: finalModelConfig,
-    cieResult: cieResult,
-    latencyMs,
-    retryCount,
+  const finalProvider = providers[finalModelConfig.provider];
+  logCieUsage({
+    intent: finalCieResult.intent,
+    memoryKeys: finalCieResult.memoryKeys,
+    rawMemory: finalCieResult.rawMemory,
+    historyCount: finalCieResult.historyCount,
+    rawHistory: finalCieResult.rawHistory,
+    summaryLevel: finalCieResult.summaryLevel || "None",
+    summarySize: finalCieResult.summarySize,
+    rawSummary: finalCieResult.rawSummary,
+    estimatedTokens: finalCieResult.estimatedTokens,
     compressionApplied,
+    finalPromptSize: finalCieResult.promptText.length,
+    providerName: finalModelConfig.provider,
+    modelDisplayName: finalModelConfig.displayName,
+    latencyMs,
     fallbackOccurred,
-    fallbackChain
-});
+    retryCount,
+    provider: finalProvider,
+    maxBudget: finalCieResult.maxBudget,
+    tokenBreakdown: finalCieResult.tokenBreakdown || {},
+    healthScore: getHealthScore(finalModelConfig.provider),
+    fallbackChain,
+  });
 
   return cleanResponse(response);
 }
@@ -282,11 +440,11 @@ export async function askDeepSeek(prompt) {
   return await askModelCie("deepseek", prompt);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// askGroqStream
+// Streaming chat powered by the Context Intelligence Engine and RetryPolicyEngine.
+// ─────────────────────────────────────────────────────────────────────────────
 export async function askGroqStream(prompt) {
-  // Developer Console: start a new request context
-  beginRequest();
-  emitDevEvent('IntentDetected', { intent: 'chat', tool: 'chat', userPrompt: prompt });
-
   const settings = await loadSettings();
   const overrides = settings.capabilityRoutes || {};
   let modelConfig;
@@ -301,7 +459,7 @@ export async function askGroqStream(prompt) {
   let finalModelConfig = modelConfig;
   lastModelUsed = finalModelConfig;
   let fallbackOccurred = false;
- let provider = getProvider(modelConfig.provider);
+  let provider = providers[modelConfig.provider];
   const fallbackChain = [modelConfig.provider];
 
   let cieResult = await runCiePipeline(prompt, "chat", provider, SYSTEM_PROMPT, "", settings);
@@ -339,10 +497,8 @@ export async function askGroqStream(prompt) {
 
           const attemptLatency = Date.now() - attemptStart;
           recordSuccess(finalModelConfig.provider, attemptLatency);
-recordSuccessForModel(
-    finalModelConfig,
-    attemptLatency
-);          break; // Success!
+          recordModelSuccess(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, attemptLatency);
+          break; // Success!
 
         } catch (err) {
           const decision = evaluateRetryPolicy({
@@ -359,7 +515,7 @@ recordSuccessForModel(
           if (decision.action === RetryAction.COMPRESS && !yieldedAny) {
             retryCount++;
             compressionApplied = true;
-            cieResult = compressContext(cieResult, provider, prompt, SYSTEM_PROMPT, "");
+            cieResult = compressCieResult(cieResult, provider, prompt, SYSTEM_PROMPT, "");
             continue;
           }
 
@@ -369,17 +525,15 @@ recordSuccessForModel(
           }
 
           if ((decision.action === RetryAction.FALLBACK || decision.action === RetryAction.ABORT) && !yieldedAny && modelConfig.fallback) {
-            recordFailureForModel(
-    finalModelConfig,
-    fallbackErr
-);
+            recordFailure(finalModelConfig.provider, decision.error);
+            recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, decision.error);
             fallbackOccurred = true;
             finalModelConfig = resolveModel(modelConfig.fallback);
             lastModelUsed = finalModelConfig;
             console.log(`\n🔄 Falling back stream to ${finalModelConfig.provider} (${finalModelConfig.modelId})...`);
             fallbackChain.push(finalModelConfig.provider);
 
-            const fallbackProvider = getCurrentProvider(finalModelConfig);
+            const fallbackProvider = providers[finalModelConfig.provider];
             const fallbackCieResult = await runCiePipeline(prompt, "chat", fallbackProvider, SYSTEM_PROMPT, "", settings);
 
             try {
@@ -392,48 +546,57 @@ recordSuccessForModel(
               }
               const fallbackLatency = Date.now() - fallbackStart;
               recordSuccess(finalModelConfig.provider, fallbackLatency);
-recordSuccessForModel(
-    finalModelConfig,
-    fallbackLatency
-);              cieResult = fallbackCieResult; // for logging
+              recordModelSuccess(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackLatency);
+              cieResult = fallbackCieResult; // for logging
             } catch (fallbackErr) {
-              recordFailureForModel(
-    finalModelConfig,
-    fallbackErr
-);
+              recordFailure(finalModelConfig.provider, fallbackErr);
+              recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackErr);
               console.error(`\n❌ Stream fallback failed: ${fallbackErr.message}`);
               throw fallbackErr;
             }
             break;
           } else {
-recordFailureForModel(
-    finalModelConfig,
-    decision.error
-);
+            recordFailure(finalModelConfig.provider, decision.error);
+            recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, decision.error);
             throw decision.error;
           }
         }
       }
 
       let endTime = Date.now();
-logExecution({
-    modelConfig: finalModelConfig,
-   cieResult: cieResult,
-    latencyMs,
-    retryCount,
-    compressionApplied,
-    fallbackOccurred,
-    fallbackChain
-});
+      const finalProvider = providers[finalModelConfig.provider];
+      logCieUsage({
+        intent: cieResult.intent,
+        memoryKeys: cieResult.memoryKeys,
+        rawMemory: cieResult.rawMemory,
+        historyCount: cieResult.historyCount,
+        rawHistory: cieResult.rawHistory,
+        summaryLevel: cieResult.summaryLevel || "None",
+        summarySize: cieResult.summarySize,
+        rawSummary: cieResult.rawSummary,
+        estimatedTokens: cieResult.estimatedTokens,
+        compressionApplied,
+        finalPromptSize: cieResult.promptText.length,
+        providerName: finalModelConfig.provider,
+        modelDisplayName: finalModelConfig.displayName,
+        latencyMs: endTime - startTime,
+        fallbackOccurred,
+        retryCount,
+        provider: finalProvider,
+        maxBudget: cieResult.maxBudget,
+        tokenBreakdown: cieResult.tokenBreakdown || {},
+        healthScore: getHealthScore(finalModelConfig.provider),
+        fallbackChain,
+      });
     }
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// askAI
+// Main non-streaming AI entry point. Powered by Context Intelligence Engine.
+// ─────────────────────────────────────────────────────────────────────────────
 export async function askAI(prompt, tool = "chat") {
-  // Developer Console: start a new request context
-  const reqId = beginRequest();
-  emitDevEvent('IntentDetected', { intent: tool, tool, userPrompt: prompt });
-
   const settings = await loadSettings();
   const overrides = settings.capabilityRoutes || {};
   let modelConfig;
@@ -445,7 +608,7 @@ export async function askAI(prompt, tool = "chat") {
     modelConfig = await decideModel(prompt, tool, overrides, {}, settings);
   }
 
-  const provider = getProvider(modelConfig.provider);
+  const provider = providers[modelConfig.provider];
   let finalModelConfig = modelConfig;
   lastModelUsed = finalModelConfig;
   let fallbackOccurred = false;
@@ -472,10 +635,8 @@ export async function askAI(prompt, tool = "chat") {
     compressionApplied = result.compressionApplied;
     // Phase 6: record per-model success
     const elapsed = Date.now() - startTime;
-recordSuccessForModel(
-    finalModelConfig,
-    elapsed
-);  } catch (err) {
+    recordModelSuccess(modelConfig.name || modelConfig.key || modelConfig.provider, elapsed);
+  } catch (err) {
     // Phase 6: record primary model failure
     recordModelFailure(modelConfig.name || modelConfig.key || modelConfig.provider, err);
     if (modelConfig.fallback) {
@@ -485,7 +646,7 @@ recordSuccessForModel(
       console.log(`\n🔄 Primary provider failed. Falling back to ${finalModelConfig.provider} (${finalModelConfig.modelId})...`);
       fallbackChain.push(finalModelConfig.provider);
 
-      const fallbackProvider = getCurrentProvider(finalModelConfig);
+      const fallbackProvider = providers[finalModelConfig.provider];
 
       const result = await executeWithCie({
         prompt,
@@ -502,10 +663,8 @@ recordSuccessForModel(
       compressionApplied = result.compressionApplied;
       // Phase 6: record fallback model success
       const fallbackElapsed = Date.now() - startTime;
-recordSuccessForModel(
-    finalModelConfig,
-    latency
-);    } else {
+      recordModelSuccess(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackElapsed);
+    } else {
       throw err;
     }
   }
@@ -513,18 +672,38 @@ recordSuccessForModel(
   let endTime = Date.now();
   let latencyMs = endTime - startTime;
 
-logExecution({
-    modelConfig: finalModelConfig,
-   cieResult: cieResult,
-    latencyMs,
-    retryCount,
+  const finalProvider = providers[finalModelConfig.provider];
+  logCieUsage({
+    intent: finalCieResult.intent,
+    memoryKeys: finalCieResult.memoryKeys,
+    rawMemory: finalCieResult.rawMemory,
+    historyCount: finalCieResult.historyCount,
+    rawHistory: finalCieResult.rawHistory,
+    summaryLevel: finalCieResult.summaryLevel || "None",
+    summarySize: finalCieResult.summarySize,
+    rawSummary: finalCieResult.rawSummary,
+    estimatedTokens: finalCieResult.estimatedTokens,
     compressionApplied,
+    finalPromptSize: finalCieResult.promptText.length,
+    providerName: finalModelConfig.provider,
+    modelDisplayName: finalModelConfig.displayName,
+    latencyMs,
     fallbackOccurred,
-    fallbackChain
-});
+    retryCount,
+    provider: finalProvider,
+    maxBudget: finalCieResult.maxBudget,
+    tokenBreakdown: finalCieResult.tokenBreakdown || {},
+    healthScore: getHealthScore(finalModelConfig.provider),
+    fallbackChain,
+  });
+
   return cleanResponse(response);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// extractMemory
+// Uses Gemini (primary) → Groq (fallback) per the spec, routed through CIE.
+// ─────────────────────────────────────────────────────────────────────────────
 export async function extractMemory(userMessage) {
   let response;
 

@@ -128,8 +128,12 @@ export function selectModel({
   let relaxedToGeneral = false;
   if (scoredCandidates.length === 0 && availableCandidates.length > 0) {
     console.warn(
-      `⚠️ [ModelSelector] No capable candidates for intent "${intent}" (capability: ${capability}). Relaxing to general_chat.`
-    );
+`[ModelSelector]
+Intent: ${intent}
+Capability: ${capability}
+Available Models: ${availableCandidates.length}
+Relaxing to GeneralChat`
+);
     relaxedToGeneral = true;
     const { passed: generalCandidates } = filterByCapability(availableCandidates, "GeneralChat");
     scoredCandidates = scoreCandidates(
@@ -151,7 +155,12 @@ export function selectModel({
     // Absolute last resort — static capability mapping
     console.warn(`⚠️ [ModelSelector] Zero available candidates. Using static registry fallback.`);
     const staticModel = resolveCapability(capability);
-    selected = null; // Will be flagged in diagnostics
+
+if (!staticModel) {
+    throw new Error(
+        `No fallback model registered for capability "${capability}".`
+    );
+}
 
     const diagnosticsInput = {
       intent, confidence, secondaryIntent, capability,
@@ -164,10 +173,13 @@ export function selectModel({
     };
     logSelectionDiagnostics(diagnosticsInput);
 
-    return {
-      selected: { ...staticModel, matchedCapability: capability },
-      diagnostics: buildDiagnosticsSummary(diagnosticsInput),
-    };
+return {
+    selected: {
+        ...staticModel,
+        matchedCapability: capability
+    },
+    diagnostics: buildDiagnosticsSummary(diagnosticsInput)
+};
   }
 
   // ── 8. Log diagnostics ────────────────────────────────────────────────────
