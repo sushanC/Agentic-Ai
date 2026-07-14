@@ -92,17 +92,20 @@ export function resolveCapabilityForIntent(intent) {
   return INTENT_TO_CAPABILITY[intent] || "general_chat";
 }
 
-/**
- * Check if a single candidate satisfies the required capability.
- *
- * @param {import("./CandidateBuilder.js").CandidateModel} candidate
- * @param {string} capability - Capability key
- * @returns {{ passes: boolean, reason: string|null }}
- */
 export function satisfiesCapability(candidate, capability) {
+  if (capability === "general_chat") {
+    return { passes: true, reason: null };
+  }
+
+  // Primary check: check candidate's capabilities metadata array
+  if (candidate.capabilities && candidate.capabilities.includes(capability)) {
+    return { passes: true, reason: null };
+  }
+
+  // Secondary/Fallback check: check structural requirements flags
   const requirements = CAPABILITY_REQUIREMENTS[capability];
   if (!requirements) {
-    // Unknown capability — don't filter
+    // Unknown capability with no requirements — don't filter
     return { passes: true, reason: null };
   }
 

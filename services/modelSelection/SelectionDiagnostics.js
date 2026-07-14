@@ -20,6 +20,8 @@
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  */
 
+import { getModelHealth, getCooldownRemaining } from "./HealthScorer.js";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Formatting helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,26 +173,82 @@ export function logSelectionDiagnostics(input) {
  * @returns {object}
  */
 export function buildDiagnosticsSummary(input) {
-  const { intent, confidence, capability, scoredCandidates, selected, selectionReason, overrideApplied } = input;
-
-  return {
+  const {
     intent,
     confidence,
+    secondaryIntent,
     capability,
-    selected: selected ? {
-      key:         selected.key,
-      displayName: selected.displayName,
-      provider:    selected.provider,
-      modelId:     selected.modelId,
-    } : null,
+    allCandidates = [],
+    availabilityResults = [],
+    capabilityResults = { passed: [], rejected: [] },
+    scoredCandidates = [],
+    selected,
+    selectionReason,
+    overrideApplied,
+    relaxedToGeneral = false,
+    staticFallbackUsed = false,
+  } = input;
+
+  const availMap = {};
+  for (const ar of availabilityResults) {
+    availMap[ar.candidate.key] = {
+      available: ar.available,
+      reason: ar.rejectionReason,
+      cooldownRemainingMs: ar.cooldownRemainingMs,
+    };
+  }
+
+  const capRejectedMap = {};
+  for (const cr of capabilityResults.rejected || []) {
+    capRejectedMap[cr.candidate.key] = cr.reason;
+  }
+
+  const candidatesSummary = allCandidates.map(candidate => {
+    const key = candidate.key;
+    const avail = availMap[key] || { available: false, reason: "UnknownStatus", cooldownRemainingMs: 0 };
+    const capRejectedReason = capRejectedMap[key];
+    const sc = scoredCandidates.find(s => s.candidate.key === key);
+    const healthRecord = getModelHealth(key);
+
+    return {
+      key,
+      displayName: candidate.displayName,
+      provider: candidate.provider,
+      modelId: candidate.modelId,
+      enabled: candidate.enabled,
+      status: candidate.status,
+      health: {
+        score: healthRecord.healthScore,
+        successRate: healthRecord.successRate,
+        averageLatencyMs: healthRecord.avgLatencyMs,
+        failureCount: healthRecord.totalFailures,
+        cooldownRemainingMs: avail.cooldownRemainingMs || 0,
+      },
+      available: avail.available,
+      rejectionReason: avail.available ? (capRejectedReason ? "CapabilityMismatch" : null) : avail.reason,
+      capabilityFilterReason: capRejectedReason || null,
+      score: sc ? sc.score : null,
+      scoringBreakdown: sc ? sc.breakdown : null,
+    };
+  });
+
+  return {
+    detectedIntent: intent,
+    intentConfidence: confidence,
+    secondaryIntent,
+    resolvedCapability: capability,
     reason: selectionReason,
     overrideApplied: overrideApplied || null,
-    candidates: (scoredCandidates || []).map(sc => ({
-      key:        sc.candidate.key,
-      score:      sc.score,
-      health:     sc.breakdown.health,
-      latency:    sc.breakdown.latency,
-      capability: sc.breakdown.capability,
-    })),
+    fallbackDecisions: {
+      relaxedToGeneralChat: relaxedToGeneral,
+      staticRegistryFallbackUsed: staticFallbackUsed,
+    },
+    selectedModel: selected ? {
+      key: selected.key || selected.name,
+      displayName: selected.displayName,
+      provider: selected.provider,
+      modelId: selected.modelId,
+    } : null,
+    candidates: candidatesSummary,
   };
 }

@@ -21,6 +21,38 @@
 import { getModelHealth } from "./HealthScorer.js";
 import { isAvailable as isProviderAvailable } from "../cie/ProviderHealthManager.js";
 import { ProviderErrorType } from "../cie/ProviderErrorClassifier.js";
+import dns from "dns";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Background Connectivity Checking
+// ─────────────────────────────────────────────────────────────────────────────
+
+let systemOffline = false;
+
+function checkConnectivity() {
+  dns.lookup("google.com", (err) => {
+    if (err) {
+      dns.lookup("openrouter.ai", (err2) => {
+        systemOffline = !!err2;
+      });
+    } else {
+      systemOffline = false;
+    }
+  });
+}
+
+// Check initially
+checkConnectivity();
+
+// Periodic checks every 10 seconds
+const intervalId = setInterval(checkConnectivity, 10000);
+if (intervalId && typeof intervalId.unref === "function") {
+  intervalId.unref();
+}
+
+export function isSystemOffline() {
+  return systemOffline;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rejection Reason Constants
@@ -36,6 +68,9 @@ export const RejectionReason = Object.freeze({
   INSUFFICIENT_BALANCE:  "InsufficientBalance",
   PROVIDER_DISABLED:     "ProviderDisabled",
   UNSUPPORTED_CAPABILITY:"UnsupportedCapability",
+  UNHEALTHY:             "Unhealthy",
+  NETWORK_OFFLINE:       "NetworkOffline",
+  CONTEXT_LIMIT_EXCEEDED:"ContextLimitExceeded",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,25 +81,41 @@ export const RejectionReason = Object.freeze({
  * Evaluate a single candidate against all availability criteria.
  *
  * @param {import("./CandidateBuilder.js").CandidateModel} candidate
+ * @param {number} [estimatedTokens=0]
  * @returns {{ available: boolean, reason: string|null, cooldownRemainingMs: number }}
  */
-function evaluateCandidate(candidate) {
+function evaluateCandidate(candidate, estimatedTokens = 0) {
   // 1. Explicitly disabled in registry
   if (!candidate.enabled) {
     return { available: false, reason: RejectionReason.DISABLED, cooldownRemainingMs: 0 };
   }
 
-  // 2. Reserved / manually disabled (e.g. experimental models like GLM)
+  // 2. Reserved / manually disabled (e.g. GLM)
   if (candidate.reserved) {
     return { available: false, reason: RejectionReason.RESERVED, cooldownRemainingMs: 0 };
   }
 
-  // 3. Offline — API key not configured
+  // 3. Offline connectivity check (skip non-local models immediately)
+  if (systemOffline && candidate.provider !== "ollama" && candidate.status !== "local") {
+    return { available: false, reason: RejectionReason.NETWORK_OFFLINE, cooldownRemainingMs: 0 };
+  }
+
+  // 4. Context size check (estimated tokens exceed maximum context window)
+  if (estimatedTokens > 0 && candidate.contextWindow && estimatedTokens > candidate.contextWindow) {
+    return { available: false, reason: RejectionReason.CONTEXT_LIMIT_EXCEEDED, cooldownRemainingMs: 0 };
+  }
+
+  // Preserve local models — bypass network status, model health, cooldowns, and provider check
+  if (candidate.provider === "ollama" || candidate.status === "local") {
+    return { available: true, reason: null, cooldownRemainingMs: 0 };
+  }
+
+  // 5. Offline — API key not configured
   if (candidate.status === "offline") {
     return { available: false, reason: RejectionReason.OFFLINE, cooldownRemainingMs: 0 };
   }
 
-  // 4. Per-model health checks
+  // 6. Per-model health checks
   const health = getModelHealth(candidate.key);
 
   if (health.permanentlyDisabled) {
@@ -75,13 +126,17 @@ function evaluateCandidate(candidate) {
     return { available: false, reason, cooldownRemainingMs: Infinity };
   }
 
+  // Unhealthy: success rate < 20%
+  if (health.successRate < 0.2) {
+    return { available: false, reason: RejectionReason.UNHEALTHY, cooldownRemainingMs: 0 };
+  }
+
   if (health.cooldownExpiry && Date.now() < health.cooldownExpiry) {
     const cooldownRemainingMs = health.cooldownExpiry - Date.now();
     return { available: false, reason: RejectionReason.COOLING_DOWN, cooldownRemainingMs };
   }
 
-  // 5. Provider-level availability (from ProviderHealthManager)
-  // A healthy model on a rate-limited provider should also be skipped.
+  // 7. Provider-level availability (from ProviderHealthManager)
   const providerAvailable = isProviderAvailable(candidate.provider);
   if (!providerAvailable) {
     return { available: false, reason: RejectionReason.PROVIDER_DISABLED, cooldownRemainingMs: 0 };
@@ -98,17 +153,12 @@ function evaluateCandidate(candidate) {
  * Filter candidates to those that can currently handle requests.
  *
  * @param {import("./CandidateBuilder.js").CandidateModel[]} candidates
+ * @param {number} [estimatedTokens=0]
  * @returns {FilterResult[]}
- *
- * @typedef {object} FilterResult
- * @property {import("./CandidateBuilder.js").CandidateModel} candidate
- * @property {boolean} available
- * @property {string|null} rejectionReason - null if available
- * @property {number} cooldownRemainingMs  - 0 if not in cooldown
  */
-export function filterAvailable(candidates) {
+export function filterAvailable(candidates, estimatedTokens = 0) {
   return candidates.map(candidate => {
-    const { available, reason, cooldownRemainingMs } = evaluateCandidate(candidate);
+    const { available, reason, cooldownRemainingMs } = evaluateCandidate(candidate, estimatedTokens);
     return {
       candidate,
       available,
@@ -122,10 +172,11 @@ export function filterAvailable(candidates) {
  * Return only the available candidates (shorthand over filterAvailable).
  *
  * @param {import("./CandidateBuilder.js").CandidateModel[]} candidates
+ * @param {number} [estimatedTokens=0]
  * @returns {import("./CandidateBuilder.js").CandidateModel[]}
  */
-export function getAvailableCandidates(candidates) {
-  return filterAvailable(candidates)
+export function getAvailableCandidates(candidates, estimatedTokens = 0) {
+  return filterAvailable(candidates, estimatedTokens)
     .filter(r => r.available)
     .map(r => r.candidate);
 }

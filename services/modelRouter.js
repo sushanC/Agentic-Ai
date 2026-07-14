@@ -32,6 +32,11 @@ import { detectIntentFull } from "./cie/IntentDetector.js";
 import { selectModel } from "./modelSelection/index.js";
 import { emitDevEvent } from "./developerBridge.js";
 
+import { loadMemory } from "../storage/memoryStorage.js";
+import { getRecentHistory } from "./historyService.js";
+import { loadSummary } from "../storage/summaryStorage.js";
+import { SYSTEM_PROMPT } from "./systemPrompt.js";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool → intent override map
 // These tools bypass IntentDetector because the tool context is unambiguous.
@@ -44,6 +49,48 @@ const TOOL_INTENT_OVERRIDES = Object.freeze({
   agent:    "AgentWorkflow",
   planning: "AgentWorkflow",
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prompt Token Estimation Helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Estimate the total token count of the upcoming prompt (including system prompt,
+ * user message, memory, conversation history, and summaries).
+ * Uses a standard 4 characters per token heuristic.
+ *
+ * @param {string} message
+ * @param {string} tool
+ * @returns {Promise<number>} Estimated tokens
+ */
+async function estimateTotalTokens(message, tool) {
+  // Base length: user prompt + system prompt
+  let charLength = (message?.length || 0) + (SYSTEM_PROMPT?.length || 0);
+
+  try {
+    // Retrieve context elements in parallel
+    const [memory, history, summary] = await Promise.all([
+      loadMemory().catch(() => ({})),
+      getRecentHistory(10).catch(() => []),
+      loadSummary().catch(() => ({})),
+    ]);
+
+    if (memory) {
+      charLength += JSON.stringify(memory).length;
+    }
+    if (Array.isArray(history)) {
+      charLength += history.reduce((sum, msg) => sum + (msg.content?.length || 0) + 20, 0);
+    }
+    if (summary && summary.summary) {
+      charLength += summary.summary.length;
+    }
+  } catch (err) {
+    console.error("⚠️ [TokenEstimation] Failed to load context for token estimation:", err.message);
+  }
+
+  // 1 token = approx 4 characters
+  return Math.ceil(charLength / 4);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public: decideModel (async — Phase 2/6)
@@ -69,7 +116,10 @@ export async function decideModel(
   _healthScores = {},  // Kept for backward compatibility — intentionally ignored
   settings = {}
 ) {
-  // 1. Resolve intent
+  // 1. Estimate total tokens in the prompt context
+  const estimatedTokens = await estimateTotalTokens(message, tool);
+
+  // 2. Resolve intent
   //    Tool overrides take highest priority (tool context is unambiguous).
   //    For "chat" tool, IntentDetector determines intent from message content.
   let intent, confidence, secondaryIntent;
@@ -86,12 +136,13 @@ export async function decideModel(
     secondaryIntent = intentResult.secondaryIntent;
   }
 
-  // 2. Delegate to MSE — single authoritative decision maker
+  // 3. Delegate to MSE — single authoritative decision maker
   const { selected, diagnostics } = selectModel({
     intent,
     confidence,
     secondaryIntent,
     overrides,
+    estimatedTokens, // Pass estimated tokens to MSE
   });
 
   // Emit to developer console

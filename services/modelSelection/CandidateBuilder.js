@@ -124,8 +124,10 @@ export function buildCandidates(overrides = {}) {
 
   const candidates = [];
   for (const [key, model] of Object.entries(modelRegistry)) {
-    const isOverride = overrideKeys.has(key);
-    candidates.push(normalize(key, model, isOverride));
+    if (model.enabled) {
+      const isOverride = overrideKeys.has(key);
+      candidates.push(normalize(key, model, isOverride));
+    }
   }
 
   return candidates;
@@ -144,7 +146,7 @@ export function buildOverrideCandidate(capability, overrides = {}) {
   if (!overrideKey) return [];
 
   const model = modelRegistry[overrideKey];
-  if (!model) return [];
+  if (!model || !model.enabled) return [];
 
   return [normalize(overrideKey, model, true)];
 }

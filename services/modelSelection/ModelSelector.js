@@ -33,15 +33,16 @@ import { filterByCapability, resolveCapabilityForIntent } from "./CapabilityFilt
 import { scoreCandidate } from "./IntentScorer.js";
 import { logSelectionDiagnostics, buildDiagnosticsSummary } from "./SelectionDiagnostics.js";
 import { resolveCapability } from "../modelRegistry.js";
+import { getModelHealthScore, getCooldownRemaining, getModelHealth } from "./HealthScorer.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal: score a list of available candidates and sort
 // ─────────────────────────────────────────────────────────────────────────────
 
-function scoreCandidates(candidates, intent) {
+function scoreCandidates(candidates, intent, overrides = {}, estimatedTokens = 0) {
   return candidates
     .map(candidate => {
-      const { score, breakdown } = scoreCandidate(candidate, intent);
+      const { score, breakdown } = scoreCandidate(candidate, intent, overrides, estimatedTokens);
       return { candidate, score, breakdown };
     })
     .sort((a, b) => {
@@ -64,15 +65,15 @@ function scoreCandidates(candidates, intent) {
  * @param {number} [params.confidence]     - Intent confidence (0–1)
  * @param {string|null} [params.secondaryIntent]
  * @param {object} [params.overrides]      - capabilityRoutes from settings
+ * @param {number} [params.estimatedTokens] - Estimated input token size of request
  * @returns {{ selected: object, diagnostics: object }}
- *          selected: model config with matchedCapability (compatible with existing callers)
- *          diagnostics: machine-readable summary
  */
 export function selectModel({
   intent,
   confidence = 1.0,
   secondaryIntent = null,
   overrides = {},
+  estimatedTokens = 0,
 }) {
   const capability = resolveCapabilityForIntent(intent);
 
@@ -83,13 +84,13 @@ export function selectModel({
   const overrideKey = overrides?.[capability];
   if (overrideKey) {
     const overrideCandidates = buildOverrideCandidate(capability, overrides);
-    const availableOverrides = getAvailableCandidates(overrideCandidates);
+    const availableOverrides = getAvailableCandidates(overrideCandidates, estimatedTokens);
 
     if (availableOverrides.length > 0) {
       const overrideCandidate = availableOverrides[0];
-      const scored = scoreCandidates(availableOverrides, intent);
+      const scored = scoreCandidates(availableOverrides, intent, overrides, estimatedTokens);
 
-      const availabilityResults = filterAvailable(allCandidates);
+      const availabilityResults = filterAvailable(allCandidates, estimatedTokens);
       const diagnosticsInput = {
         intent, confidence, secondaryIntent, capability,
         allCandidates,
@@ -99,6 +100,8 @@ export function selectModel({
         selected: overrideCandidate,
         selectionReason: `User override: ${overrideKey} for capability "${capability}"`,
         overrideApplied: overrideKey,
+        relaxedToGeneral: false,
+        staticFallbackUsed: false,
       };
       logSelectionDiagnostics(diagnosticsInput);
 
@@ -112,7 +115,7 @@ export function selectModel({
   }
 
   // ── 3. Availability filter ────────────────────────────────────────────────
-  const availabilityResults = filterAvailable(allCandidates);
+  const availabilityResults = filterAvailable(allCandidates, estimatedTokens);
   const availableCandidates = availabilityResults
     .filter(r => r.available)
     .map(r => r.candidate);
@@ -122,7 +125,7 @@ export function selectModel({
     filterByCapability(availableCandidates, intent);
 
   // ── 5. Score and sort ─────────────────────────────────────────────────────
-  let scoredCandidates = scoreCandidates(capableCandidates, intent);
+  let scoredCandidates = scoreCandidates(capableCandidates, intent, overrides, estimatedTokens);
 
   // ── 6. Fallback: relax to general_chat if no capable candidates ───────────
   let relaxedToGeneral = false;
@@ -138,13 +141,16 @@ Relaxing to GeneralChat`
     const { passed: generalCandidates } = filterByCapability(availableCandidates, "GeneralChat");
     scoredCandidates = scoreCandidates(
       generalCandidates.length > 0 ? generalCandidates : availableCandidates,
-      "GeneralChat"
+      "GeneralChat",
+      overrides,
+      estimatedTokens
     );
   }
 
   // ── 7. Final fallback: static registry mapping ────────────────────────────
   let selected;
   let selectionReason;
+  let staticFallbackUsed = false;
 
   if (scoredCandidates.length > 0) {
     selected = scoredCandidates[0].candidate;
@@ -154,13 +160,14 @@ Relaxing to GeneralChat`
   } else {
     // Absolute last resort — static capability mapping
     console.warn(`⚠️ [ModelSelector] Zero available candidates. Using static registry fallback.`);
+    staticFallbackUsed = true;
     const staticModel = resolveCapability(capability);
 
-if (!staticModel) {
-    throw new Error(
+    if (!staticModel) {
+      throw new Error(
         `No fallback model registered for capability "${capability}".`
-    );
-}
+      );
+    }
 
     const diagnosticsInput = {
       intent, confidence, secondaryIntent, capability,
@@ -170,16 +177,18 @@ if (!staticModel) {
       selected: null,
       selectionReason: "All candidates unavailable — static registry fallback used",
       overrideApplied: null,
+      relaxedToGeneral,
+      staticFallbackUsed,
     };
     logSelectionDiagnostics(diagnosticsInput);
 
-return {
-    selected: {
+    return {
+      selected: {
         ...staticModel,
         matchedCapability: capability
-    },
-    diagnostics: buildDiagnosticsSummary(diagnosticsInput)
-};
+      },
+      diagnostics: buildDiagnosticsSummary(diagnosticsInput)
+    };
   }
 
   // ── 8. Log diagnostics ────────────────────────────────────────────────────
@@ -192,6 +201,8 @@ return {
     selected,
     selectionReason,
     overrideApplied: null,
+    relaxedToGeneral,
+    staticFallbackUsed,
   };
   logSelectionDiagnostics(diagnosticsInput);
 
@@ -214,6 +225,7 @@ return {
  * @returns {object} Model config compatible with existing callers
  */
 function buildModelConfig(candidate, capability) {
+  const healthRecord = getModelHealth(candidate.key);
   return {
     // Fields that ai.js accesses directly
     name:            candidate.key,
@@ -240,6 +252,15 @@ function buildModelConfig(candidate, capability) {
     supportsCoding:      candidate.flags.coding,
     supportsResearch:    candidate.flags.research,
     supportsOffline:     candidate.flags.offline,
+
+    // Expose health & selection metrics (Requirement 6)
+    health:              getModelHealthScore(candidate.key),
+    cooldown:            getCooldownRemaining(candidate.key),
+    averageLatency:      healthRecord.avgLatencyMs,
+    successRate:         healthRecord.successRate,
+    failureCount:        healthRecord.totalFailures,
+    contextSize:         candidate.contextWindow,
+    capabilityScores:    candidate.scores,
 
     // MSE metadata
     matchedCapability: capability,

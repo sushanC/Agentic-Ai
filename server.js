@@ -11,6 +11,8 @@ import {
   getModel
 } from "./services/modelRegistry.js";
 
+import { getModelHealth, getCooldownRemaining, getModelHealthScore } from "./services/modelSelection/HealthScorer.js";
+
 import { askAI, askGroqStream, getLastModelUsed } from "./services/ai.js";
 import { SYSTEM_PROMPT } from "./services/systemPrompt.js";
 import { handleVoice } from "./handlers/voiceHandler.js";
@@ -1377,7 +1379,20 @@ app.get(
   (req, res) => {
     try {
       const registry = getModelRegistry();
-      res.json(registry);
+      const enriched = registry.map(model => {
+        const health = getModelHealth(model.key);
+        return {
+          ...model,
+          health:              getModelHealthScore(model.key),
+          cooldown:            getCooldownRemaining(model.key),
+          averageLatency:      health.avgLatencyMs,
+          successRate:         health.successRate,
+          failureCount:        health.totalFailures,
+          contextSize:         model.contextWindow,
+          capabilityScores:    model.scores,
+        };
+      });
+      res.json(enriched);
     } catch (err) {
       console.error("MODELS ERROR:", err);
       res.status(500).json({ error: "Failed to load model registry" });

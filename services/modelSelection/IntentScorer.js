@@ -5,27 +5,24 @@
  * intent. Scores are weighted dynamically based on what matters most for the
  * detected intent.
  *
- * Phase 5 — Intent-specific scoring weights.
- *
- * Score components:
- *  - Health Score    : How reliable/healthy the model currently is (0–1 → %)
- *  - Latency Score   : How fast the model typically responds
- *  - Cost Score      : Cheaper models score higher (inverted cost)
- *  - Capability Score: Model's self-declared strength for this intent's domain
- *  - Context Score   : Larger context window scores higher (for long-context intents)
- *  - Reasoning Score : Model's reasoning capability (for planning/research intents)
- *  - Quality Score   : Model's output quality (for writing intents)
+ * Upgrade: Score candidate using 6 components:
+ *  - capability score (domain capability)
+ *  - health score (reliability and latency penalty)
+ *  - latency (speed score)
+ *  - priority (normalized model priority)
+ *  - context window (normalized context size)
+ *  - user override (direct override flag)
  *
  * Every intent picks a weight vector from INTENT_WEIGHTS.
- * Weights in each vector must sum to 1.0.
+ * Weights in each vector sum to 1.0.
  */
 
 import { getModelHealthScore } from "./HealthScorer.js";
+import { resolveCapabilityForIntent } from "./CapabilityFilter.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Latency tier → numeric score
 // ─────────────────────────────────────────────────────────────────────────────
-
 const LATENCY_SCORE = Object.freeze({
   very_fast:  1.0,
   fast:       0.82,
@@ -38,248 +35,200 @@ const LATENCY_SCORE = Object.freeze({
 // ─────────────────────────────────────────────────────────────────────────────
 // Context window → normalized score (log-scale normalization)
 // ─────────────────────────────────────────────────────────────────────────────
-
 const MAX_CONTEXT = 1_000_000; // Gemini 2.5 Flash — used as ceiling
 
 function contextScore(contextWindow) {
   if (!contextWindow || contextWindow <= 0) return 0;
-  // Log scale: small windows get penalized, but the jump from 128k to 1M is not as huge
   return Math.min(1.0, Math.log10(contextWindow) / Math.log10(MAX_CONTEXT));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cost → normalized score (lower cost = higher score)
+// Priority → normalized score (lower priority number = higher score)
 // ─────────────────────────────────────────────────────────────────────────────
-
-const MAX_COST = 0.002; // $0.002/1k tokens — used as ceiling
-
-function costScore(estimatedCostPer1kTokens) {
-  const cost = estimatedCostPer1kTokens || 0;
-  return cost === 0 ? 1.0 : Math.max(0, 1 - (cost / MAX_COST));
+function priorityScore(priority) {
+  const p = priority || 5;
+  return Math.max(0.0, 1 - (p - 1) * 0.15); // priority 1 -> 1.0, 2 -> 0.85, 3 -> 0.70, etc.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 5 — Intent-specific weight tables
+// Intent-specific weight tables (Override weight = 0.50 for all intents)
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Weight vectors keyed by intent string.
- * Each vector must sum to 1.0.
- *
- * Components:
- *  h = health      (from HealthScorer)
- *  l = latency     (from latency tier)
- *  c = cost        (from estimatedCostPer1kTokens)
- *  ca = capability (model's domain score)
- *  cx = context    (context window size)
- *  r = reasoning   (model.scores.reasoning)
- *  q = quality     (model.scores.writing — proxy for output quality)
- */
 const INTENT_WEIGHTS = Object.freeze({
-
   Greeting: {
-    health:     0.20,
-    latency:    0.50,   // Speed is king for greetings
-    cost:       0.20,
-    capability: 0.10,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.05,
+    health:     0.10,
+    latency:    0.25,   // Speed is highly weighted
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   GeneralChat: {
-    health:     0.30,
-    latency:    0.30,
-    cost:       0.20,
-    capability: 0.20,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.15,
+    health:     0.15,
+    latency:    0.10,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   Programming: {
-    health:     0.30,
-    latency:    0.20,
-    cost:       0.10,
-    capability: 0.40,   // Coding ability matters most
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.25,   // Coding ability matters most
+    health:     0.10,
+    latency:    0.05,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   Research: {
-    health:     0.20,
-    latency:    0.10,
-    cost:       0.05,
-    capability: 0.45,   // Research depth matters most
-    context:    0.20,   // Large context needed for thorough research
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.20,   // Research capability priority
+    health:     0.10,
+    latency:    0.05,
+    priority:   0.05,
+    context:    0.10,   // Large context window score is highly weighted
+    override:   0.50,
   },
 
   Planning: {
-    health:     0.20,
-    latency:    0.10,
-    cost:       0.05,
-    capability: 0.45,   // Planning capability matters most
-    context:    0.00,
-    reasoning:  0.20,   // Reasoning critical for multi-step plans
-    quality:    0.00,
+    capability: 0.20,   // Planning capability priority
+    health:     0.10,
+    latency:    0.05,
+    priority:   0.10,   // Priority rank matters
+    context:    0.05,
+    override:   0.50,
   },
 
   Writing: {
-    health:     0.20,
-    latency:    0.20,
-    cost:       0.10,
-    capability: 0.40,   // Writing quality is primary
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.10,   // Output quality secondary signal
+    capability: 0.25,   // Writing quality is primary
+    health:     0.10,
+    latency:    0.05,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   Vision: {
-    health:     0.25,
-    latency:    0.15,
-    cost:       0.10,
-    capability: 0.50,   // Vision capability is hard requirement + quality
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.25,   // Vision capability priority
+    health:     0.10,
+    latency:    0.05,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   Memory: {
-    health:     0.30,
-    latency:    0.25,
-    cost:       0.10,
-    capability: 0.35,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.20,
+    health:     0.15,
+    latency:    0.05,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   MemoryExtraction: {
-    health:     0.30,
-    latency:    0.25,
-    cost:       0.10,
-    capability: 0.35,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.20,
+    health:     0.15,
+    latency:    0.05,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   PDF: {
-    health:     0.25,
-    latency:    0.10,
-    cost:       0.05,
-    capability: 0.35,
-    context:    0.25,   // Large context essential for PDF QA
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.20,
+    health:     0.10,
+    latency:    0.05,
+    priority:   0.05,
+    context:    0.10,   // Large context size
+    override:   0.50,
   },
 
   WebSearch: {
-    health:     0.25,
-    latency:    0.30,
-    cost:       0.15,
-    capability: 0.30,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.15,
+    health:     0.10,
+    latency:    0.15,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   TaskCreation: {
-    health:     0.30,
-    latency:    0.35,
-    cost:       0.20,
     capability: 0.15,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    health:     0.15,
+    latency:    0.10,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   Reminder: {
-    health:     0.30,
-    latency:    0.35,
-    cost:       0.20,
     capability: 0.15,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    health:     0.15,
+    latency:    0.10,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   Calendar: {
-    health:     0.30,
-    latency:    0.35,
-    cost:       0.20,
     capability: 0.15,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    health:     0.15,
+    latency:    0.10,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   Email: {
-    health:     0.30,
-    latency:    0.25,
-    cost:       0.15,
-    capability: 0.30,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.15,
+    health:     0.15,
+    latency:    0.10,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
   AgentWorkflow: {
-    health:     0.20,
-    latency:    0.10,
-    cost:       0.05,
-    capability: 0.45,
-    context:    0.00,
-    reasoning:  0.20,
-    quality:    0.00,
+    capability: 0.20,
+    health:     0.10,
+    latency:    0.05,
+    priority:   0.10,
+    context:    0.05,
+    override:   0.50,
   },
 
   ActionPlanning: {
-    health:     0.20,
-    latency:    0.10,
-    cost:       0.05,
-    capability: 0.45,
-    context:    0.00,
-    reasoning:  0.20,
-    quality:    0.00,
+    capability: 0.20,
+    health:     0.10,
+    latency:    0.05,
+    priority:   0.10,
+    context:    0.05,
+    override:   0.50,
   },
 
   Summary: {
-    health:     0.25,
-    latency:    0.20,
-    cost:       0.10,
-    capability: 0.25,
-    context:    0.20,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.15,
+    health:     0.15,
+    latency:    0.10,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 
-  // Default fallback weights
   _default: {
-    health:     0.30,
-    latency:    0.25,
-    cost:       0.20,
-    capability: 0.25,
-    context:    0.00,
-    reasoning:  0.00,
-    quality:    0.00,
+    capability: 0.15,
+    health:     0.15,
+    latency:    0.10,
+    priority:   0.05,
+    context:    0.05,
+    override:   0.50,
   },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Capability score extraction
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Map intent to the model's capability score field.
- *
- * @param {import("./CandidateBuilder.js").CandidateModel} candidate
- * @param {string} intent
- * @returns {number} 0.0–1.0
- */
 function getCapabilityScore(candidate, intent) {
   const scoreMap = {
     Programming:       "coding",
@@ -289,7 +238,7 @@ function getCapabilityScore(candidate, intent) {
     AgentWorkflow:     "planning",
     ActionPlanning:    "planning",
     Vision:            "vision",
-    PDF:               "research",     // Research score proxies PDF ability
+    PDF:               "research",
     Memory:            "general",
     MemoryExtraction:  "general",
     WebSearch:         "research",
@@ -314,29 +263,47 @@ function getCapabilityScore(candidate, intent) {
  *
  * @param {import("./CandidateBuilder.js").CandidateModel} candidate
  * @param {string} intent - Primary intent from IntentDetector
+ * @param {object} [overrides={}] - capabilityRoutes overrides
+ * @param {number} [estimatedTokens=0] - Estimated input token size of request
  * @returns {{ score: number, breakdown: object }}
  */
-export function scoreCandidate(candidate, intent) {
-  const weights = INTENT_WEIGHTS[intent] || INTENT_WEIGHTS._default;
+export function scoreCandidate(candidate, intent, overrides = {}, estimatedTokens = 0) {
+  let weights = { ...(INTENT_WEIGHTS[intent] || INTENT_WEIGHTS._default) };
+
+  // Dynamic Prompt token size awareness weight adjustment
+  if (estimatedTokens > 0) {
+    if (estimatedTokens > 15000) {
+      // Large prompt: increase context weight, reduce latency weight
+      const shift = Math.min(weights.latency, 0.15);
+      weights.latency -= shift;
+      weights.context += shift;
+    } else if (estimatedTokens < 2000) {
+      // Small prompt: increase latency weight, reduce context weight
+      const shift = Math.min(weights.context, 0.05);
+      weights.context -= shift;
+      weights.latency += shift;
+    }
+  }
+
+  const capabilityKey = resolveCapabilityForIntent(intent);
+  const isOverride = overrides?.[capabilityKey] === candidate.key;
 
   // Individual component scores (all 0.0–1.0)
   const health     = getModelHealthScore(candidate.key);
   const latency    = LATENCY_SCORE[candidate.latencyTier || candidate.latency] ?? 0.30;
-  const cost       = costScore(candidate.estimatedCostPer1kTokens);
-  const capability = getCapabilityScore(candidate, intent);
+  const priority   = priorityScore(candidate.priority);
   const context    = contextScore(candidate.contextWindow);
-  const reasoning  = candidate.scores?.reasoning ?? 0.5;
-  const quality    = candidate.scores?.writing ?? 0.5;   // Writing score as quality proxy
+  const capability = getCapabilityScore(candidate, intent);
+  const override   = isOverride ? 1.0 : 0.0;
 
   // Weighted composite (0.0–1.0)
   const raw =
     health     * weights.health     +
     latency    * weights.latency    +
-    cost       * weights.cost       +
-    capability * weights.capability +
+    priority   * weights.priority   +
     context    * weights.context    +
-    reasoning  * weights.reasoning  +
-    quality    * weights.quality;
+    capability * weights.capability +
+    override   * weights.override;
 
   // Scale to 0–100 integer
   const score = Math.round(raw * 100);
@@ -346,11 +313,10 @@ export function scoreCandidate(candidate, intent) {
     breakdown: {
       health:     Math.round(health * 100),
       latency:    Math.round(latency * 100),
-      cost:       Math.round(cost * 100),
-      capability: Math.round(capability * 100),
+      priority:   Math.round(priority * 100),
       context:    Math.round(context * 100),
-      reasoning:  Math.round(reasoning * 100),
-      quality:    Math.round(quality * 100),
+      capability: Math.round(capability * 100),
+      override:   Math.round(override * 100),
       weights,
     },
   };

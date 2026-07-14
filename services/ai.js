@@ -16,7 +16,7 @@ import { runCiePipeline, buildPrompt } from "./cie/index.js";
 
 // Import new production-hardening modules
 import { evaluate as evaluateRetryPolicy, RetryAction, logPolicyDecision } from "./cie/RetryPolicyEngine.js";
-import { recordSuccess, recordFailure, getHealthScore } from "./cie/ProviderHealthManager.js";
+import { recordSuccess, recordFailure, getHealthScore, isAvailable as isProviderAvailable } from "./cie/ProviderHealthManager.js";
 
 // MSE Phase 6 — Per-model health tracking (parallel to provider health)
 import { recordModelSuccess, recordModelFailure } from "./modelSelection/index.js";
@@ -366,29 +366,51 @@ export async function askModelCie(modelName, prompt, intent = "GeneralChat") {
     retryCount = result.retryCount;
     compressionApplied = result.compressionApplied;
   } catch (err) {
-    if (modelConfig.fallback) {
+    const fallbackList = modelConfig.fallbackChain || (modelConfig.fallback ? [modelConfig.fallback] : []);
+    let success = false;
+
+    for (const fallbackKey of fallbackList) {
+      const fallbackModel = resolveModel(fallbackKey);
+      if (!fallbackModel || !fallbackModel.enabled || fallbackModel.status === "disabled") {
+        continue;
+      }
+      if (!isProviderAvailable(fallbackModel.provider)) {
+        console.log(`⚠️ [Fallback] Model ${fallbackModel.displayName} skipped because provider ${fallbackModel.provider} is unhealthy.`);
+        continue;
+      }
+
       fallbackOccurred = true;
-      finalModelConfig = resolveModel(modelConfig.fallback);
+      finalModelConfig = fallbackModel;
       lastModelUsed = finalModelConfig;
       console.log(`\n🔄 Primary provider failed. Falling back to ${finalModelConfig.provider} (${finalModelConfig.modelId})...`);
       fallbackChain.push(finalModelConfig.provider);
 
-      const fallbackProvider = providers[finalModelConfig.provider];
+      try {
+        const fallbackProvider = providers[finalModelConfig.provider];
+        const result = await executeWithCie({
+          prompt,
+          tool: intent,
+          provider: fallbackProvider,
+          modelId: finalModelConfig.modelId,
+          systemPrompt: SYSTEM_PROMPT,
+          pdfContext: "",
+          settings
+        });
+        response = result.response;
+        finalCieResult = result.cieResult;
+        retryCount = result.retryCount;
+        compressionApplied = result.compressionApplied;
+        const elapsed = Date.now() - startTime;
+        recordModelSuccess(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, elapsed);
+        success = true;
+        break;
+      } catch (fallbackErr) {
+        recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackErr);
+        console.error(`❌ Fallback to ${finalModelConfig.displayName} failed:`, fallbackErr.message);
+      }
+    }
 
-      const result = await executeWithCie({
-        prompt,
-        tool: intent,
-        provider: fallbackProvider,
-        modelId: finalModelConfig.modelId,
-        systemPrompt: SYSTEM_PROMPT,
-        pdfContext: "",
-        settings
-      });
-      response = result.response;
-      finalCieResult = result.cieResult;
-      retryCount = result.retryCount;
-      compressionApplied = result.compressionApplied;
-    } else {
+    if (!success) {
       throw err;
     }
   }
@@ -524,37 +546,56 @@ export async function askGroqStream(prompt) {
             continue;
           }
 
-          if ((decision.action === RetryAction.FALLBACK || decision.action === RetryAction.ABORT) && !yieldedAny && modelConfig.fallback) {
+          const fallbackList = modelConfig.fallbackChain || (modelConfig.fallback ? [modelConfig.fallback] : []);
+          if ((decision.action === RetryAction.FALLBACK || decision.action === RetryAction.ABORT) && !yieldedAny && fallbackList.length > 0) {
             recordFailure(finalModelConfig.provider, decision.error);
             recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, decision.error);
-            fallbackOccurred = true;
-            finalModelConfig = resolveModel(modelConfig.fallback);
-            lastModelUsed = finalModelConfig;
-            console.log(`\n🔄 Falling back stream to ${finalModelConfig.provider} (${finalModelConfig.modelId})...`);
-            fallbackChain.push(finalModelConfig.provider);
 
-            const fallbackProvider = providers[finalModelConfig.provider];
-            const fallbackCieResult = await runCiePipeline(prompt, "chat", fallbackProvider, SYSTEM_PROMPT, "", settings);
-
-            try {
-              const fallbackStart = Date.now();
-              textStream = fallbackProvider.stream(finalModelConfig.modelId, fallbackCieResult.promptText, { systemPrompt: SYSTEM_PROMPT });
-              for await (const text of textStream) {
-                yield {
-                  choices: [{ delta: { content: text } }]
-                };
+            let success = false;
+            for (const fallbackKey of fallbackList) {
+              const fallbackModel = resolveModel(fallbackKey);
+              if (!fallbackModel || !fallbackModel.enabled || fallbackModel.status === "disabled") {
+                continue;
               }
-              const fallbackLatency = Date.now() - fallbackStart;
-              recordSuccess(finalModelConfig.provider, fallbackLatency);
-              recordModelSuccess(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackLatency);
-              cieResult = fallbackCieResult; // for logging
-            } catch (fallbackErr) {
-              recordFailure(finalModelConfig.provider, fallbackErr);
-              recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackErr);
-              console.error(`\n❌ Stream fallback failed: ${fallbackErr.message}`);
-              throw fallbackErr;
+              if (!isProviderAvailable(fallbackModel.provider)) {
+                console.log(`⚠️ [Stream Fallback] Model ${fallbackModel.displayName} skipped because provider ${fallbackModel.provider} is unhealthy.`);
+                continue;
+              }
+
+              fallbackOccurred = true;
+              finalModelConfig = fallbackModel;
+              lastModelUsed = finalModelConfig;
+              console.log(`\n🔄 Falling back stream to ${finalModelConfig.provider} (${finalModelConfig.modelId})...`);
+              fallbackChain.push(finalModelConfig.provider);
+
+              const fallbackProvider = providers[finalModelConfig.provider];
+              try {
+                const fallbackCieResult = await runCiePipeline(prompt, "chat", fallbackProvider, SYSTEM_PROMPT, "", settings);
+                const fallbackStart = Date.now();
+                textStream = fallbackProvider.stream(finalModelConfig.modelId, fallbackCieResult.promptText, { systemPrompt: SYSTEM_PROMPT });
+                for await (const text of textStream) {
+                  yield {
+                    choices: [{ delta: { content: text } }]
+                  };
+                }
+                const fallbackLatency = Date.now() - fallbackStart;
+                recordSuccess(finalModelConfig.provider, fallbackLatency);
+                recordModelSuccess(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackLatency);
+                cieResult = fallbackCieResult; // for logging
+                success = true;
+                break;
+              } catch (fallbackErr) {
+                recordFailure(finalModelConfig.provider, fallbackErr);
+                recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackErr);
+                console.error(`\n❌ Stream fallback to ${finalModelConfig.displayName} failed: ${fallbackErr.message}`);
+              }
             }
-            break;
+
+            if (success) {
+              break;
+            } else {
+              throw decision.error;
+            }
           } else {
             recordFailure(finalModelConfig.provider, decision.error);
             recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, decision.error);
@@ -639,32 +680,52 @@ export async function askAI(prompt, tool = "chat") {
   } catch (err) {
     // Phase 6: record primary model failure
     recordModelFailure(modelConfig.name || modelConfig.key || modelConfig.provider, err);
-    if (modelConfig.fallback) {
+
+    const fallbackList = modelConfig.fallbackChain || (modelConfig.fallback ? [modelConfig.fallback] : []);
+    let success = false;
+
+    for (const fallbackKey of fallbackList) {
+      const fallbackModel = resolveModel(fallbackKey);
+      if (!fallbackModel || !fallbackModel.enabled || fallbackModel.status === "disabled") {
+        continue;
+      }
+      if (!isProviderAvailable(fallbackModel.provider)) {
+        console.log(`⚠️ [Fallback] Model ${fallbackModel.displayName} skipped because provider ${fallbackModel.provider} is unhealthy.`);
+        continue;
+      }
+
       fallbackOccurred = true;
-      finalModelConfig = resolveModel(modelConfig.fallback);
+      finalModelConfig = fallbackModel;
       lastModelUsed = finalModelConfig;
       console.log(`\n🔄 Primary provider failed. Falling back to ${finalModelConfig.provider} (${finalModelConfig.modelId})...`);
       fallbackChain.push(finalModelConfig.provider);
 
-      const fallbackProvider = providers[finalModelConfig.provider];
+      try {
+        const fallbackProvider = providers[finalModelConfig.provider];
+        const result = await executeWithCie({
+          prompt,
+          tool,
+          provider: fallbackProvider,
+          modelId: finalModelConfig.modelId,
+          systemPrompt: SYSTEM_PROMPT,
+          pdfContext: "",
+          settings
+        });
+        response = result.response;
+        finalCieResult = result.cieResult;
+        retryCount = result.retryCount;
+        compressionApplied = result.compressionApplied;
+        const fallbackElapsed = Date.now() - startTime;
+        recordModelSuccess(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackElapsed);
+        success = true;
+        break;
+      } catch (fallbackErr) {
+        recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackErr);
+        console.error(`❌ Fallback to ${finalModelConfig.displayName} failed:`, fallbackErr.message);
+      }
+    }
 
-      const result = await executeWithCie({
-        prompt,
-        tool,
-        provider: fallbackProvider,
-        modelId: finalModelConfig.modelId,
-        systemPrompt: SYSTEM_PROMPT,
-        pdfContext: "",
-        settings
-      });
-      response = result.response;
-      finalCieResult = result.cieResult;
-      retryCount = result.retryCount;
-      compressionApplied = result.compressionApplied;
-      // Phase 6: record fallback model success
-      const fallbackElapsed = Date.now() - startTime;
-      recordModelSuccess(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackElapsed);
-    } else {
+    if (!success) {
       throw err;
     }
   }
