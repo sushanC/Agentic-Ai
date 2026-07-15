@@ -16,6 +16,7 @@ import { getModelHealth, getCooldownRemaining, getModelHealthScore } from "./ser
 import { askAI, askGroqStream, getLastModelUsed } from "./services/ai.js";
 import { SYSTEM_PROMPT } from "./services/systemPrompt.js";
 import { handleVoice } from "./handlers/voiceHandler.js";
+import { voiceManager } from "./services/voice/VoiceManager.js";
 
 // Phase 3 — Confirmation Workflow
 import {
@@ -1571,3 +1572,54 @@ app.listen(
     console.log("📁 Storage: ~/.personal-agent/");
   }
 );
+
+// ============================================================
+// Voice Assistant Process Message Handling
+// ============================================================
+
+// Initialize voice manager
+voiceManager.init().catch(err => console.error("Failed to init voice manager:", err));
+
+if (typeof process.on === "function") {
+  process.on("message", async (msg) => {
+    if (!msg || !msg.type) return;
+
+    console.log("[Backend IPC] Received message:", msg);
+
+    try {
+      switch (msg.type) {
+        case "START_VOICE_MODE":
+          voiceManager.startVoiceMode();
+          break;
+        case "STOP_VOICE_MODE":
+          voiceManager.stopVoiceMode();
+          break;
+        case "TOGGLE_VOICE_MODE":
+          await voiceManager.toggleVoiceMode();
+          break;
+        case "START_LISTENING":
+          await voiceManager.startListening();
+          break;
+        case "CANCEL_LISTENING":
+          voiceManager.cancelListening();
+          break;
+        case "STOP_SPEAKING":
+          voiceManager.stopSpeaking();
+          break;
+        case "PAUSE_SPEAKING":
+          voiceManager.queue.pause();
+          break;
+        case "RESUME_SPEAKING":
+          voiceManager.queue.resume();
+          break;
+        case "RELOAD_VOICE_SETTINGS":
+          await voiceManager.reloadSettings();
+          break;
+        default:
+          break;
+      }
+    } catch (err) {
+      console.error("[Backend IPC] Error handling process message:", err);
+    }
+  });
+}

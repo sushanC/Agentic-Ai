@@ -21,7 +21,21 @@ const DEFAULT_SETTINGS = {
   contextCompression: true,
   tokenSafetyMargin: 0.1,
   enableSmartContext: true,
-  enableSemanticMemoryRetrieval: true
+  enableSemanticMemoryRetrieval: true,
+  
+  // Voice settings
+  enableVoice: false,
+  pushToTalk: false,
+  conversationMode: false,
+  voiceSelection: "en-IN-NeerjaNeural",
+  speechSpeed: "+0%",
+  speechPitch: "+0Hz",
+  speechVolume: "+0%",
+  microphoneSelection: "default",
+  speakerSelection: "default",
+  language: "en",
+  autoListenAfterResponse: false,
+  conversationTimeout: 30
 };
 
 export async function loadSettings() {
