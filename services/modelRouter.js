@@ -143,6 +143,7 @@ export async function decideModel(
     secondaryIntent,
     overrides,
     estimatedTokens, // Pass estimated tokens to MSE
+    isVoiceMode: (tool === "voice")
   });
 
   // Emit to developer console

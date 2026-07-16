@@ -1562,6 +1562,24 @@ app.get(
 );
 
 // ============================================================
+// GET /audio/devices
+// Returns discovered ALSA audio input and output devices.
+// ============================================================
+app.get(
+  "/audio/devices",
+  async (req, res) => {
+    try {
+      const { getAudioDevices } = await import("./services/voice/AudioDeviceManager.js");
+      const devices = await getAudioDevices();
+      res.json(devices);
+    } catch (err) {
+      console.error("AUDIO DEVICES ERROR:", err);
+      res.status(500).json({ error: "Failed to query audio hardware" });
+    }
+  }
+);
+
+// ============================================================
 // Start server
 // ============================================================
 

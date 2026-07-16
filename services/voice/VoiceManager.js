@@ -9,7 +9,14 @@ import { updateSummary } from "../summaryService.js";
 import { incrementStat } from "../../storage/statsStorage.js";
 import { loadSettings } from "../../storage/settingsStorage.js";
 import { emitDevEvent, beginRequest, endRequest } from "../developerBridge.js";
+import { perfMonitor } from "./VoicePerformanceMonitor.js";
 
+/**
+ * VoiceManager.js
+ *
+ * Coordinates the full-duplex Jarvis Voice Pipeline.
+ * Handles timings, VAD configs, MSE tool routing, and OS audio playback.
+ */
 class VoiceManager {
   constructor() {
     this.stateMachine = new VoiceStateMachine((state, oldState) => this._onStateChange(state, oldState));
@@ -17,29 +24,25 @@ class VoiceManager {
     this.settings = null;
     this.isActive = false;
     this.conversationTimer = null;
-    
-    // Timing metrics tracking
-    this.timings = {
-      totalStart: null,
-      listeningStart: null,
-      listeningEnd: null,
-      aiStart: null,
-      aiEnd: null,
-      ttsStart: null,
-      ttsEnd: null,
-      playbackStart: null,
-      playbackEnd: null
-    };
+    this.currentText = null;
+    this.currentReply = null;
+    this.playbackActive = false;
 
     // Bind queue callbacks
     this.queue.onPlayStart = (file) => {
-      if (!this.timings.playbackStart) {
-        this.timings.playbackStart = Date.now();
+      perfMonitor.end("playbackStartup");
+      if (!this.playbackActive) {
+        this.playbackActive = true;
+        perfMonitor.start("playback");
       }
     };
     
     this.queue.onEmpty = () => {
-      this.timings.playbackEnd = Date.now();
+      if (this.playbackActive) {
+        perfMonitor.end("playback");
+        this.playbackActive = false;
+      }
+      perfMonitor.end("total");
       this._finalizeTimings();
 
       if (this.isActive && this.settings?.conversationMode) {
@@ -119,6 +122,8 @@ class VoiceManager {
    * Start recording input from the user.
    */
   async startListening() {    
+    await this.init();
+
     // Interruption check: If speaking, stop it
     if (this.stateMachine.state === "speaking") {
       console.log("[VoiceManager] Interruption: New request started while speaking. Stopping playback.");
@@ -130,20 +135,16 @@ class VoiceManager {
       return;
     }
 
+    // Reset active transcripts for the new request
+    this.currentText = null;
+    this.currentReply = null;
+
+    // Start tracking lifecycle timings
+    const sessionId = `voice-${Date.now()}`;
+    perfMonitor.startSession(sessionId);
+
     // Begin logical request context for timings & logs
     beginRequest();
-
-    this.timings = {
-      totalStart: Date.now(),
-      listeningStart: Date.now(),
-      listeningEnd: null,
-      aiStart: null,
-      aiEnd: null,
-      ttsStart: null,
-      ttsEnd: null,
-      playbackStart: null,
-      playbackEnd: null
-    };
 
     emitDevEvent("ListeningStarted", { timestamp: new Date().toISOString() });
 
@@ -152,20 +153,19 @@ class VoiceManager {
 
     try {
       console.log("[VoiceManager] Calling listen()");
+      
+      perfMonitor.start("recording");
       const result = await listen({
         language: this.settings?.language || "en",
-        silenceTimeout: this.settings?.pushToTalk ? 1 : 2.5, // shorter timeout if push to talk
-        maxRecordingTime: 5,
+        silenceTimeout: this.settings?.silenceTimeout || 2.0,
+        maxRecordingTime: this.settings?.maxRecordingTime || 15,
+        noiseTolerance: this.settings?.noiseTolerance || 300,
+        noSpeechTimeout: this.settings?.noSpeechTimeout || 5.0,
         device: this.settings?.microphoneSelection || "default"
       });
+      perfMonitor.end("recording");
 
       console.log("[VoiceManager] Listen returned:", result);
-
-      this.timings.listeningEnd = Date.now();
-      emitDevEvent("ListeningFinished", { 
-        timestamp: new Date().toISOString(),
-        latencyMs: this.timings.listeningEnd - this.timings.listeningStart 
-      });
 
       this._clearConversationTimer();
 
@@ -177,6 +177,8 @@ class VoiceManager {
       }
 
       const text = result.text ? result.text.trim() : "";
+      this.currentText = text;
+      
       emitDevEvent("SpeechRecognized", { text });
 
       if (!text) {
@@ -184,7 +186,6 @@ class VoiceManager {
         emitDevEvent("SpeechRecognitionFailed", { error: "No speech detected" });
         
         if (this.isActive && this.settings?.conversationMode) {
-          // In conversation mode, retry listening after empty speech
           console.log("[VoiceManager] Continuous conversation active. Retrying listening...");
           this.startListening();
         } else {
@@ -194,6 +195,12 @@ class VoiceManager {
       }
 
       console.log(`[VoiceManager] Recognized Speech: "${text}"`);
+
+      // Set physical ALSA speaker selection in queue dynamically
+      if (this.settings?.speakerSelection) {
+        this.queue.setSpeaker(this.settings.speakerSelection);
+      }
+
       await this.processRequest(text);
 
     } catch (err) {
@@ -232,7 +239,7 @@ class VoiceManager {
       return;
     }
 
-    this.timings.aiStart = Date.now();
+    perfMonitor.start("aiPipeline");
     emitDevEvent("AIStarted", { prompt: text });
 
     try {
@@ -240,18 +247,20 @@ class VoiceManager {
       await addMessage("user", text);
       await updateMemory(text);
 
-      const result = await routeRequest(text);
+      const result = await routeRequest(text, "voice");
       const reply = result.answer;
 
       await addMessage("assistant", reply);
       await updateSummary();
       await incrementStat("messages");
 
-      this.timings.aiEnd = Date.now();
+      perfMonitor.end("aiPipeline");
       emitDevEvent("AIFinished", { 
-        latencyMs: this.timings.aiEnd - this.timings.aiStart,
+        latencyMs: perfMonitor.getMetrics().aiPipeline || 0,
         reply 
       });
+
+      this.currentReply = reply;
 
       // Clean markdown tags or symbols for TTS
       const cleanReply = reply.replace(/\*\*|__/g, "").replace(/`/g, "");
@@ -271,7 +280,8 @@ class VoiceManager {
    * @param {string} replyText
    */
   async synthesizeAndSpeak(replyText) {
-    this.timings.ttsStart = Date.now();
+    perfMonitor.start("tts");
+    perfMonitor.start("playbackStartup");
     emitDevEvent("TTSStarted", { text: replyText });
 
     try {
@@ -292,9 +302,9 @@ class VoiceManager {
         this.queue.enqueue(audioFile);
       }
 
-      this.timings.ttsEnd = Date.now();
+      perfMonitor.end("tts");
       emitDevEvent("TTSFinished", {
-        latencyMs: this.timings.ttsEnd - this.timings.ttsStart,
+        latencyMs: perfMonitor.getMetrics().tts || 0,
         characters: replyText.length
       });
 
@@ -309,30 +319,19 @@ class VoiceManager {
    * @private
    */
   _finalizeTimings() {
-    const end = Date.now();
-    const metrics = {
-      listeningLatency: this.timings.listeningEnd && this.timings.listeningStart 
-        ? this.timings.listeningEnd - this.timings.listeningStart : 0,
-      aiLatency: this.timings.aiEnd && this.timings.aiStart 
-        ? this.timings.aiEnd - this.timings.aiStart : 0,
-      ttsLatency: this.timings.ttsEnd && this.timings.ttsStart 
-        ? this.timings.ttsEnd - this.timings.ttsStart : 0,
-      playbackDuration: this.timings.playbackEnd && this.timings.playbackStart 
-        ? this.timings.playbackEnd - this.timings.playbackStart : 0,
-      totalDuration: this.timings.totalStart ? end - this.timings.totalStart : 0
-    };
-
+    const metrics = perfMonitor.getMetrics();
     console.log("[VoiceManager] timings finalized:", metrics);
 
     emitDevEvent("FullRequestSummary", {
-      latencyMs: metrics.totalDuration,
+      latencyMs: metrics.total || 0,
       success: this.stateMachine.state !== "error",
       payload: {
-        listeningLatency: metrics.listeningLatency,
-        aiLatency: metrics.aiLatency,
-        ttsLatency: metrics.ttsLatency,
-        playbackDuration: metrics.playbackDuration,
-        totalDuration: metrics.totalDuration
+        listeningLatency: metrics.recording || 0,
+        aiLatency: metrics.aiPipeline || 0,
+        ttsLatency: metrics.tts || 0,
+        playbackDuration: metrics.playback || 0,
+        totalDuration: metrics.total || 0,
+        playbackStartupLatency: metrics.playbackStartup || 0
       }
     });
 
@@ -348,7 +347,12 @@ class VoiceManager {
     if (typeof process.send === "function") {
       process.send({
         type: "VOICE_STATE_CHANGE",
-        payload: { state, oldState }
+        payload: { 
+          state, 
+          oldState,
+          text: state === "processing" ? this.currentText : null,
+          reply: state === "speaking" ? this.currentReply : null
+        }
       });
     }
 

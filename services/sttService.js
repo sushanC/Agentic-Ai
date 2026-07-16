@@ -94,7 +94,8 @@ export function shutdownSTT() {
  * @param {string} options.language - "en", "auto", or other ISO code
  * @param {number} options.silenceTimeout - duration of silence in seconds to trigger auto stop
  * @param {number} options.maxRecordingTime - max duration of recording in seconds
- * @param {number} options.silenceThreshold - amplitude threshold for silence detection
+ * @param {number} options.noiseTolerance - amplitude RMS threshold for speech detection
+ * @param {number} options.noSpeechTimeout - duration of silence before speech start to timeout
  * @param {string} options.device - input device identifier
  * @returns {Promise<{text: string, detected_language?: string, language_probability?: number, error?: string}>}
  */
@@ -104,30 +105,29 @@ export async function listen(options = {}) {
 
   const {
     language = "en",
-    silenceTimeout = 2,
+    silenceTimeout = 2.0,
     maxRecordingTime = 15,
-    silenceThreshold = 0.3,
-    device = null
+    noiseTolerance = 300,
+    noSpeechTimeout = 5.0,
+    device = "default"
   } = options;
 
   return new Promise((resolve, reject) => {
     const tempFile = path.join(os.tmpdir(), `samgpt-audio-${randomUUID()}.wav`);
     const fileStream = fs.createWriteStream(tempFile);
 
-
-const recOptions = {
-  recorder: os.platform() === "linux" ? "arecord" : "sox",
-  sampleRate: 16000,
-  threshold: silenceThreshold,
-  silence: silenceTimeout.toString(),
-  verbose: false
-};
+    // Disable standard arecord/sox threshold silence logic to let our JS-level VAD handle it
+    const recOptions = {
+      recorder: os.platform() === "linux" ? "arecord" : "sox",
+      sampleRate: 16000,
+      verbose: false
+    };
 
     if (device && device !== "default") {
       recOptions.device = device;
     }
 
-    console.log(`[STT] Starting recording to ${tempFile}...`);
+    console.log(`[STT] Starting recording to ${tempFile} (VAD enabled)...`);
 
     let recording;
     try {
@@ -146,6 +146,9 @@ const recOptions = {
 
     let maxTimeTimeout = null;
     let finished = false;
+    let voiceActive = false;
+    let silenceDuration = 0;
+    let totalDuration = 0;
 
     const cleanupAndResolve = () => {
       if (finished) return;
@@ -172,6 +175,15 @@ const recOptions = {
           return;
         }
 
+        // Prevent empty audio files or tiny files (less than 100 bytes of header) from failing
+        const stats = fs.statSync(tempFile);
+        if (stats.size <= 44) {
+          console.log("[STT VAD] Empty audio file detected, skipping transcription.");
+          fs.unlink(tempFile, () => {});
+          resolve({ text: "", confidence: 1.0, duration: 0.0 });
+          return;
+        }
+
         if (!whisperDaemon) {
           console.error("[STT] Whisper daemon died before transcription.");
           fs.unlink(tempFile, () => {});
@@ -192,7 +204,47 @@ const recOptions = {
       }, 200);
     };
 
-    // Auto stop when node-record-lpcm16 stream ends (detects silence based on config)
+    // JS-level Voice Activity Detection (VAD) using RMS energy analysis
+    recStream.on("data", (chunk) => {
+      let sumSquares = 0;
+      let count = 0;
+      for (let i = 0; i < chunk.length; i += 2) {
+        if (i + 1 < chunk.length) {
+          const sample = chunk.readInt16LE(i);
+          sumSquares += sample * sample;
+          count++;
+        }
+      }
+      if (count > 0) {
+        const rms = Math.sqrt(sumSquares / count);
+        // Calculate duration of this chunk
+        // 16000 samples/sec, 2 bytes/sample = 32000 bytes/sec
+        const chunkDuration = chunk.length / 32000;
+        totalDuration += chunkDuration;
+
+        const isSpeech = rms > noiseTolerance;
+        if (isSpeech) {
+          if (!voiceActive) {
+            console.log(`[STT VAD] Voice detected (RMS: ${rms.toFixed(1)} > Tolerance: ${noiseTolerance})`);
+            voiceActive = true;
+          }
+          silenceDuration = 0;
+        } else if (voiceActive) {
+          silenceDuration += chunkDuration;
+          if (silenceDuration >= silenceTimeout) {
+            console.log(`[STT VAD] Silence detected for ${silenceDuration.toFixed(2)}s. Stopping.`);
+            cleanupAndResolve();
+          }
+        } else {
+          // No speech detected yet. Check no-speech timeout.
+          if (totalDuration >= noSpeechTimeout) {
+            console.log(`[STT VAD] No speech detected within ${noSpeechTimeout}s. Stopping.`);
+            cleanupAndResolve();
+          }
+        }
+      }
+    });
+
     recStream.on("end", () => {
       console.log("[STT] Recording stream end event.");
       cleanupAndResolve();

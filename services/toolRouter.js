@@ -98,7 +98,8 @@ function isAgentRequest(text) {
 }
 
 export async function routeRequest(
-  message
+  message,
+  toolContext = "chat"
 ) {
 
   const text = message.toLowerCase();
@@ -392,10 +393,10 @@ export async function routeRequest(
 
   const { askAI } = await import("./ai.js");
 
-  const answer = await askAI(message);
+  const answer = await askAI(message, toolContext);
 
   return {
-    tool: "chat",
+    tool: toolContext,
     answer
   };
 }

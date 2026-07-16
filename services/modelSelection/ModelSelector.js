@@ -74,6 +74,7 @@ export function selectModel({
   secondaryIntent = null,
   overrides = {},
   estimatedTokens = 0,
+  isVoiceMode = false,
 }) {
   const capability = resolveCapabilityForIntent(intent);
 
@@ -126,6 +127,18 @@ export function selectModel({
 
   // ── 5. Score and sort ─────────────────────────────────────────────────────
   let scoredCandidates = scoreCandidates(capableCandidates, intent, overrides, estimatedTokens);
+
+  if (isVoiceMode) {
+    console.log("[ModelSelector] Voice Mode active. Optimizing candidate priority (Gemini Flash -> Groq -> OpenRouter -> Ollama)...");
+    const voicePref = ["gemini", "groq", "gpt-oss", "nemotron", "qwen", "ollama"];
+    scoredCandidates.sort((a, b) => {
+      const idxA = voicePref.indexOf(a.candidate.key);
+      const idxB = voicePref.indexOf(b.candidate.key);
+      const valA = idxA === -1 ? 999 : idxA;
+      const valB = idxB === -1 ? 999 : idxB;
+      return valA - valB;
+    });
+  }
 
   // ── 6. Fallback: relax to general_chat if no capable candidates ───────────
   let relaxedToGeneral = false;

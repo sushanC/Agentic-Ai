@@ -103,6 +103,14 @@ export class VoiceQueue {
   }
 
   /**
+   * Set the physical speaker output device.
+   * @param {string} device - ALSA device identifier
+   */
+  setSpeaker(device) {
+    this.speakerSelection = device;
+  }
+
+  /**
    * Play the next item in the queue.
    * @private
    */
@@ -124,14 +132,31 @@ export class VoiceQueue {
     }
 
     try {
+      const env = { ...process.env };
+      if (this.speakerSelection && this.speakerSelection !== "default") {
+        env.AUDIODEV = this.speakerSelection;
+        env.PULSE_SINK = this.speakerSelection;
+      }
+
       this.currentProcess = spawn("ffplay", [
         "-nodisp",
         "-autoexit",
         "-loglevel", "quiet",
         this.currentFile
-      ]);
+      ], { env });
+
+      // Playback hang watchdog: force terminate after 45 seconds of a single sentence chunk
+      const hangTimeout = setTimeout(() => {
+        if (this.currentProcess) {
+          console.warn(`[VoiceQueue] Playback hang detected for chunk: ${this.currentFile}. Force terminating.`);
+          try {
+            this.currentProcess.kill("SIGKILL");
+          } catch (e) {}
+        }
+      }, 45000);
 
       this.currentProcess.on("close", (code) => {
+        clearTimeout(hangTimeout);
         console.log(`[VoiceQueue] Playback process closed with code ${code}`);
         this.currentProcess = null;
         
@@ -148,6 +173,7 @@ export class VoiceQueue {
       });
 
       this.currentProcess.on("error", (err) => {
+        clearTimeout(hangTimeout);
         console.error("[VoiceQueue] Playback process error:", err);
         if (this.onError) this.onError(err);
         this.currentProcess = null;
