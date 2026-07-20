@@ -105,11 +105,12 @@ export async function listen(options = {}) {
 
   const {
     language = "en",
-    silenceTimeout = 2.0,
+    silenceTimeout = 0.8,
     maxRecordingTime = 15,
     noiseTolerance = 300,
     noSpeechTimeout = 5.0,
-    device = "default"
+    device = "default",
+    beamSize = 1
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -168,7 +169,7 @@ export async function listen(options = {}) {
 
       fileStream.end();
 
-      // Give a tiny buffer for file handles to close, then send to Whisper Daemon
+      // Give a tiny buffer (50ms) for file handles to flush, then send to Whisper Daemon
       setTimeout(() => {
         if (!fs.existsSync(tempFile)) {
           resolve({ text: "", error: "Audio file not created" });
@@ -199,9 +200,9 @@ export async function listen(options = {}) {
           resolve(res);
         };
 
-        const config = { audio_file: tempFile, language };
+        const config = { audio_file: tempFile, language, beam_size: beamSize };
         whisperDaemon.stdin.write(JSON.stringify(config) + "\n");
-      }, 200);
+      }, 50);
     };
 
     // JS-level Voice Activity Detection (VAD) using RMS energy analysis

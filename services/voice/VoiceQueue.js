@@ -141,6 +141,8 @@ export class VoiceQueue {
       this.currentProcess = spawn("ffplay", [
         "-nodisp",
         "-autoexit",
+        "-probesize", "32",
+        "-analyzeduration", "0",
         "-loglevel", "quiet",
         this.currentFile
       ], { env });

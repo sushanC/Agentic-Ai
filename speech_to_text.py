@@ -36,10 +36,12 @@ def main():
 
             start_time = time.perf_counter()
 
+            beam_size = data.get("beam_size", 1)
+
             segments, info = model.transcribe(
                 audio_file,
                 language=lang_param,
-                beam_size=5,
+                beam_size=beam_size,
                 vad_filter=True
             )
             

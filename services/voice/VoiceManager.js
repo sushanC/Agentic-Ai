@@ -10,6 +10,9 @@ import { incrementStat } from "../../storage/statsStorage.js";
 import { loadSettings } from "../../storage/settingsStorage.js";
 import { emitDevEvent, beginRequest, endRequest } from "../developerBridge.js";
 import { perfMonitor } from "./VoicePerformanceMonitor.js";
+import { voiceMetrics } from "./VoicePerformanceMetrics.js";
+import { shouldExtractMemory, isShortcutQuery, getVoiceCieOptions } from "./VoiceLatencyOptimizer.js";
+import { VoicePipelineOptimizer } from "./VoicePipelineOptimizer.js";
 
 /**
  * VoiceManager.js
@@ -21,6 +24,7 @@ class VoiceManager {
   constructor() {
     this.stateMachine = new VoiceStateMachine((state, oldState) => this._onStateChange(state, oldState));
     this.queue = new VoiceQueue();
+    this.pipelineOptimizer = new VoicePipelineOptimizer(this.queue);
     this.settings = null;
     this.isActive = false;
     this.conversationTimer = null;
@@ -31,9 +35,11 @@ class VoiceManager {
     // Bind queue callbacks
     this.queue.onPlayStart = (file) => {
       perfMonitor.end("playbackStartup");
+      voiceMetrics.end("playbackStartup");
       if (!this.playbackActive) {
         this.playbackActive = true;
         perfMonitor.start("playback");
+        voiceMetrics.start("playback");
       }
     };
     
@@ -234,21 +240,42 @@ class VoiceManager {
    * Send the transcribed user request to the AI routing pipeline.
    * @param {string} text
    */
+  /**
+   * Send the transcribed user request to the AI routing pipeline.
+   * @param {string} text
+   */
   async processRequest(text) {
     if (!this.stateMachine.transitionTo("processing")) {
       return;
     }
 
     perfMonitor.start("aiPipeline");
+    voiceMetrics.start("cie");
+    voiceMetrics.setMetadata("text", text);
     emitDevEvent("AIStarted", { prompt: text });
 
     try {
       // Core AI pipeline integration (CIE -> Tool Router -> MSE -> Model)
       await addMessage("user", text);
-      await updateMemory(text);
+
+      // Memory Optimization: Skip memory extraction for greetings, small talk, and control shortcuts
+      if (shouldExtractMemory(text)) {
+        await updateMemory(text);
+      } else {
+        console.log("[VoiceManager] Shortcut/greeting query detected. Skipping memory extraction.");
+      }
+
+      voiceMetrics.end("cie");
+      voiceMetrics.start("toolRouter");
+      voiceMetrics.start("mse");
+      voiceMetrics.start("provider");
 
       const result = await routeRequest(text, "voice");
       const reply = result.answer;
+
+      voiceMetrics.end("toolRouter");
+      voiceMetrics.end("mse");
+      voiceMetrics.end("provider");
 
       await addMessage("assistant", reply);
       await updateSummary();
@@ -261,6 +288,7 @@ class VoiceManager {
       });
 
       this.currentReply = reply;
+      voiceMetrics.setMetadata("reply", reply);
 
       // Clean markdown tags or symbols for TTS
       const cleanReply = reply.replace(/\*\*|__/g, "").replace(/`/g, "");
@@ -281,7 +309,9 @@ class VoiceManager {
    */
   async synthesizeAndSpeak(replyText) {
     perfMonitor.start("tts");
+    voiceMetrics.start("tts");
     perfMonitor.start("playbackStartup");
+    voiceMetrics.start("playbackStartup");
     emitDevEvent("TTSStarted", { text: replyText });
 
     try {
@@ -303,6 +333,7 @@ class VoiceManager {
       }
 
       perfMonitor.end("tts");
+      voiceMetrics.end("tts");
       emitDevEvent("TTSFinished", {
         latencyMs: perfMonitor.getMetrics().tts || 0,
         characters: replyText.length
@@ -320,7 +351,10 @@ class VoiceManager {
    */
   _finalizeTimings() {
     const metrics = perfMonitor.getMetrics();
+    voiceMetrics.end("total");
     console.log("[VoiceManager] timings finalized:", metrics);
+
+    voiceMetrics.emitToConsole();
 
     emitDevEvent("FullRequestSummary", {
       latencyMs: metrics.total || 0,

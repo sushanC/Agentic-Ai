@@ -34,6 +34,7 @@ import { scoreCandidate } from "./IntentScorer.js";
 import { logSelectionDiagnostics, buildDiagnosticsSummary } from "./SelectionDiagnostics.js";
 import { resolveCapability } from "../modelRegistry.js";
 import { getModelHealthScore, getCooldownRemaining, getModelHealth } from "./HealthScorer.js";
+import { rankVoiceCandidates } from "../voice/VoiceRoutingProfile.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal: score a list of available candidates and sort
@@ -129,14 +130,12 @@ export function selectModel({
   let scoredCandidates = scoreCandidates(capableCandidates, intent, overrides, estimatedTokens);
 
   if (isVoiceMode) {
-    console.log("[ModelSelector] Voice Mode active. Optimizing candidate priority (Gemini Flash -> Groq -> OpenRouter -> Ollama)...");
-    const voicePref = ["gemini", "groq", "gpt-oss", "nemotron", "qwen", "ollama"];
-    scoredCandidates.sort((a, b) => {
-      const idxA = voicePref.indexOf(a.candidate.key);
-      const idxB = voicePref.indexOf(b.candidate.key);
-      const valA = idxA === -1 ? 999 : idxA;
-      const valB = idxB === -1 ? 999 : idxB;
-      return valA - valB;
+    console.log("[ModelSelector] Voice Mode active. Applying Voice Routing Profile (Gemini Flash -> Groq -> OpenRouter -> Ollama)...");
+    const candidatesOnly = scoredCandidates.map(s => s.candidate);
+    const rankedCandidates = rankVoiceCandidates(candidatesOnly, { text: intent });
+    scoredCandidates = rankedCandidates.map(c => {
+      const origScored = scoredCandidates.find(s => s.candidate.key === c.key);
+      return origScored || { candidate: c, score: 90, breakdown: {} };
     });
   }
 
