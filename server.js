@@ -1641,3 +1641,90 @@ if (typeof process.on === "function") {
     }
   });
 }
+
+// ============================================================
+// Phase 2 — Desktop Control API Endpoints
+// ============================================================
+
+// GET /desktop/history
+// Returns recent desktop actions (last 100) for the Desktop page history panel.
+app.get(
+  "/desktop/history",
+  async (req, res) => {
+    try {
+      const { loadDesktopHistory } = await import("./storage/desktopHistoryStorage.js");
+      const history = await loadDesktopHistory();
+      res.json(history);
+    } catch (err) {
+      console.error("DESKTOP HISTORY ERROR:", err);
+      res.status(500).json({ error: "Failed to load desktop history" });
+    }
+  }
+);
+
+// GET /desktop/system-status
+// Returns a live snapshot of CPU, memory, battery, WiFi for the SystemStatusWidget.
+// Aggregates multiple SystemManager calls in parallel for fast response.
+app.get(
+  "/desktop/system-status",
+  async (req, res) => {
+    try {
+      const { SystemManager } = await import("./services/desktop/SystemManager.js");
+      const sm = new SystemManager();
+
+      const [cpu, memory, battery, wifi] = await Promise.allSettled([
+        sm.getCpuUsage(),
+        sm.getMemoryUsage(),
+        sm.getBattery(),
+        sm.getWifiStatus()
+      ]);
+
+      // Safely extract values (each result is { status:'fulfilled'|'rejected', value? })
+      const pick = (r) => r.status === "fulfilled" ? r.value : null;
+
+      res.json({
+        cpu:    pick(cpu),
+        memory: pick(memory),
+        battery: pick(battery),
+        wifi:   pick(wifi),
+        timestamp: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("DESKTOP SYSTEM-STATUS ERROR:", err);
+      res.status(500).json({ error: "Failed to retrieve system status" });
+    }
+  }
+);
+
+// GET /desktop/screenshot/:filename
+// Serves a saved screenshot file from ~/.personal-agent/screenshots/
+// Validates filename to prevent path traversal.
+app.get(
+  "/desktop/screenshot/:filename",
+  async (req, res) => {
+    try {
+      const { ScreenshotService } = await import("./services/desktop/ScreenshotService.js");
+      const { validateFilename }   = await import("./services/desktop/SecurityValidator.js");
+      const path = (await import("path")).default;
+
+      const { filename } = req.params;
+
+      const valid = validateFilename(filename);
+      if (!valid.valid) {
+        return res.status(400).json({ error: valid.error });
+      }
+
+      const ss       = new ScreenshotService();
+      const filePath = path.join(ss.getScreenshotsDir(), filename);
+
+      res.sendFile(filePath, (err) => {
+        if (err) {
+          res.status(404).json({ error: "Screenshot not found" });
+        }
+      });
+    } catch (err) {
+      console.error("DESKTOP SCREENSHOT SERVE ERROR:", err);
+      res.status(500).json({ error: "Failed to serve screenshot" });
+    }
+  }
+);

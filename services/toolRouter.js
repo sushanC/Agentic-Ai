@@ -93,8 +93,144 @@ function isAgentRequest(text) {
     text.includes("compose email") ||
     text.includes("send an email") ||
     text.includes("draft an email") ||
-    text.includes("email to ")
+    text.includes("email to ") ||
+    // Phase 2 — Desktop Control triggers
+    isDesktopRequest(text)
   );
+}
+
+/**
+ * isDesktopRequest(text)
+ *
+ * Phase 2 — Desktop Control Framework
+ *
+ * Detects natural language intent to control the desktop.
+ * When true, the request is routed through the Planner so the
+ * correct desktop tool is selected from the Tool Registry.
+ *
+ * Covers: app launching, file operations, system control,
+ * screenshots, clipboard, volume, brightness, search.
+ */
+function isDesktopRequest(text) {
+
+  // App launching
+  if (
+    text.startsWith("open ")           ||
+    text.startsWith("launch ")         ||
+    text.startsWith("start ")          ||
+    text.includes("open vs code")      ||
+    text.includes("open vscode")       ||
+    text.includes("open chrome")       ||
+    text.includes("open terminal")     ||
+    text.includes("launch spotify")    ||
+    text.includes("launch discord")    ||
+    text.includes("open application")  ||
+    text.includes("open app ")
+  ) return true;
+
+  // File operations
+  if (
+    text.includes("create folder")     ||
+    text.includes("make folder")       ||
+    text.includes("new folder")        ||
+    text.includes("rename file")       ||
+    text.includes("rename the file")   ||
+    text.includes("move file")         ||
+    text.includes("move the file")     ||
+    text.includes("copy file")         ||
+    text.includes("copy the file")     ||
+    text.includes("delete file")       ||
+    text.includes("delete the file")   ||
+    text.includes("duplicate file")    ||
+    text.includes("compress file")     ||
+    text.includes("zip file")          ||
+    text.includes("unzip file")        ||
+    text.includes("extract file")      ||
+    text.includes("reveal file")       ||
+    text.includes("show file")         ||
+    text.includes("file metadata")     ||
+    text.includes("file info")
+  ) return true;
+
+  // File search
+  if (
+    text.startsWith("find ")           ||
+    text.startsWith("search for ")     ||
+    text.startsWith("locate ")         ||
+    text.includes("find every ")       ||
+    text.includes("find all ")         ||
+    text.includes("search files")      ||
+    text.includes("find files")        ||
+    text.includes("find pdf")          ||
+    text.includes("find png")          ||
+    text.includes("files modified")    ||
+    text.includes("files larger than")
+  ) return true;
+
+  // Screenshot
+  if (
+    text.includes("take screenshot")   ||
+    text.includes("take a screenshot") ||
+    text.includes("screenshot")        ||
+    text.includes("capture screen")    ||
+    text.includes("screen capture")
+  ) return true;
+
+  // Clipboard
+  if (
+    text.includes("clipboard")         ||
+    text.includes("copy to clipboard") ||
+    text.includes("what is in my clipboard")
+  ) return true;
+
+  // Volume
+  if (
+    text.includes("volume")            ||
+    text.includes("mute")              ||
+    text.includes("unmute")            ||
+    text.includes("increase volume")   ||
+    text.includes("decrease volume")   ||
+    text.includes("set volume")
+  ) return true;
+
+  // Brightness
+  if (
+    text.includes("brightness")        ||
+    text.includes("increase brightness") ||
+    text.includes("decrease brightness") ||
+    text.includes("set brightness")
+  ) return true;
+
+  // System info / status
+  if (
+    text.includes("battery")           ||
+    text.includes("cpu usage")         ||
+    text.includes("memory usage")      ||
+    text.includes("disk usage")        ||
+    text.includes("disk space")        ||
+    text.includes("network status")    ||
+    text.includes("wifi status")       ||
+    text.includes("bluetooth status")  ||
+    text.includes("system info")       ||
+    text.includes("system information") ||
+    text.includes("what os")           ||
+    text.includes("what operating system")
+  ) return true;
+
+  // Power management
+  if (
+    text.includes("lock screen")       ||
+    text.includes("lock the screen")   ||
+    text.includes("lock computer")     ||
+    text.includes("sleep")             ||
+    text.includes("put computer to sleep") ||
+    text.includes("restart computer")  ||
+    text.includes("reboot")            ||
+    text.includes("shutdown")          ||
+    text.includes("shut down")
+  ) return true;
+
+  return false;
 }
 
 export async function routeRequest(
