@@ -36,8 +36,7 @@ export class SystemManager {
     
     async getSystemInfo() {
         const res = await this.adapter.getSystemInfo();
-        if (res.success) {
-            res.output.cpus = os.cpus();
+        if (res.success && res.output) {
             res.output.totalmem = os.totalmem();
             res.output.freemem = os.freemem();
         }

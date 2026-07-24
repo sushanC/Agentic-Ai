@@ -193,6 +193,9 @@ export class LinuxAdapter {
 
     async getBrightness() {
         try {
+            const entries = await fs.readdir("/sys/class/backlight");
+
+const device = entries[0];
             const val = await fs.readFile('/sys/class/backlight/intel_backlight/brightness', 'utf8');
             const max = await fs.readFile('/sys/class/backlight/intel_backlight/max_brightness', 'utf8');
             return { success: true, output: Math.round((parseInt(val) / parseInt(max)) * 100) };
@@ -206,15 +209,47 @@ export class LinuxAdapter {
         return { success: res.success, error: res.stderr };
     }
 
-    async getBattery() {
-        try {
-            const cap = await fs.readFile('/sys/class/power_supply/BAT0/capacity', 'utf8');
-            const stat = await fs.readFile('/sys/class/power_supply/BAT0/status', 'utf8');
-            return { success: true, output: { capacity: parseInt(cap), status: stat.trim() } };
-        } catch (error) {
-            return { success: false, error: error.message };
+async getBattery() {
+    try {
+        const powerDir = "/sys/class/power_supply";
+
+        const devices = await fs.readdir(powerDir);
+        const batteryName = devices.find(d => d.startsWith("BAT"));
+
+        if (!batteryName) {
+            return {
+                success: false,
+                error: "No battery detected."
+            };
         }
+
+        const base = path.join(powerDir, batteryName);
+
+        const level = await fs.readFile(
+            path.join(base, "capacity"),
+            "utf8"
+        );
+
+        const status = await fs.readFile(
+            path.join(base, "status"),
+            "utf8"
+        );
+
+        return {
+            success: true,
+            output: {
+                level: Number(level.trim()),
+                status: status.trim()
+            }
+        };
+
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message
+        };
     }
+}
 
     async getWifiStatus() {
         const res = await runCommand('nmcli', ['-t', '-f', 'DEVICE,STATE,CONNECTION', 'device', 'status']);
@@ -249,13 +284,64 @@ export class LinuxAdapter {
         return { success: res.success, error: res.stderr };
     }
 
-    async getCpuUsage() {
-        return { success: true, output: 'Not implemented exactly' };
-    }
+async getCpuUsage() {
 
-    async getMemoryUsage() {
-        return { success: true, output: 'Not implemented exactly' };
-    }
+    const cpus1 = os.cpus();
+
+    await new Promise(r => setTimeout(r, 200));
+
+    const cpus2 = os.cpus();
+
+    let idle = 0;
+    let total = 0;
+
+    cpus1.forEach((cpu, i) => {
+
+        const t1 = cpu.times;
+        const t2 = cpus2[i].times;
+
+        const idleDiff = t2.idle - t1.idle;
+
+        const totalDiff =
+            (t2.user - t1.user) +
+            (t2.nice - t1.nice) +
+            (t2.sys - t1.sys) +
+            (t2.idle - t1.idle) +
+            (t2.irq - t1.irq);
+
+        idle += idleDiff;
+        total += totalDiff;
+
+    });
+
+    return {
+        success: true,
+        output: {
+            usage: Number(
+                ((1 - idle / total) * 100).toFixed(1)
+            )
+        }
+    };
+}
+
+async getMemoryUsage() {
+
+    const total = os.totalmem();
+
+    const free = os.freemem();
+
+    const used = total - free;
+
+    return {
+        success: true,
+        output: {
+            totalGB: +(total / 1024 ** 3).toFixed(2),
+            usedGB: +(used / 1024 ** 3).toFixed(2),
+            freeGB: +(free / 1024 ** 3).toFixed(2),
+            percent: +((used / total) * 100).toFixed(1)
+        }
+    };
+}
 
     async getDiskUsage(path = '/') {
         const res = await runCommand('df', ['-h', path]);
@@ -264,19 +350,28 @@ export class LinuxAdapter {
 
     async getNetworkStatus() {
         const res = await runCommand('nmcli', ['-t', '-f', 'TYPE,STATE,DEVICE', 'con', 'show', '--active']);
-        return { success: res.success, output: res.stdout, error: res.stderr };
+        const connected = res.stdout.trim() !== "";
+
+return {
+    success: res.success,
+    output: {
+        connected,
+        interfaces: res.stdout.trim()
+    }
+};
     }
 
     async getSystemInfo() {
         return {
             success: true,
             output: {
-                platform: os.platform(),
-                hostname: os.hostname(),
-                release: os.release(),
-                arch: os.arch(),
-                uptime: os.uptime()
-            }
+    os: os.type(),
+    platform: os.platform(),
+    hostname: os.hostname(),
+    release: os.release(),
+    arch: os.arch(),
+    uptime: os.uptime()
+}
         };
     }
 

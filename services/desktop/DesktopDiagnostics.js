@@ -89,7 +89,13 @@ export function createActionRecord(opts, input, executionStatus) {
   } else {
     // Positional form: createActionRecord(toolName, input, 'success'|'failed')
     tool         = opts || 'desktop';
-    target       = typeof input === 'object' ? (input?.path || input?.appName || input?.name || JSON.stringify(input)) : String(input || '');
+    if (typeof input === 'string') {
+      target = input.trim();
+    } else if (input && typeof input === 'object') {
+      target = input.path || input.filePath || input.file || input.target || input.appName || input.app || input.url || input.name || input.directory || input.source || '—';
+    } else {
+      target = String(input || '—');
+    }
     risk         = 'LOW';
     confirmation = 'Not Required';
     execution    = executionStatus === 'success' ? 'Success' : 'Failed';
@@ -98,11 +104,17 @@ export function createActionRecord(opts, input, executionStatus) {
     platform     = 'linux';
   }
 
+  // Clean target string to never return 'undefined'
+  let cleanTarget = typeof target === 'string' ? target.trim() : String(target || '—');
+  if (!cleanTarget || cleanTarget === 'undefined' || cleanTarget === '[object Object]') {
+    cleanTarget = '—';
+  }
+
   return {
     id:           crypto.randomUUID(),
     timestamp:    new Date().toISOString(),
     tool:         tool         || 'desktop',
-    target:       target       || '—',
+    target:       cleanTarget,
     risk:         risk         || 'LOW',
     confirmation: confirmation || 'Not Required',
     execution:    execution    || 'Success',

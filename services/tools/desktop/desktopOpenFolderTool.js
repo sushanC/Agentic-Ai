@@ -19,8 +19,19 @@ const manager = new DesktopManager();
 export class DesktopOpenFolderTool {
   async execute(action) {
     const start = Date.now();
-    const rawPath = action.input?.path || action.input?.folder || action.input?.directory || '';
-    const platform = getPlatform();
+let rawPath = "";
+
+if (typeof action.input === "string") {
+  rawPath = action.input.trim();
+} else if (action.input && typeof action.input === "object") {
+  rawPath =
+    action.input.path ||
+    action.input.folder ||
+    action.input.directory ||
+    "";
+}
+
+rawPath = rawPath.trim();    const platform = getPlatform();
 
     // ── Validation ───────────────────────────────────────────────────────────
     if (!rawPath.trim()) {

@@ -139,8 +139,9 @@ function isDesktopRequest(text) {
     text.includes("move the file")     ||
     text.includes("copy file")         ||
     text.includes("copy the file")     ||
-    text.includes("delete file")       ||
-    text.includes("delete the file")   ||
+text.includes("delete file") ||
+text.includes("delete a file") ||
+text.includes("delete the file")   ||
     text.includes("duplicate file")    ||
     text.includes("compress file")     ||
     text.includes("zip file")          ||
