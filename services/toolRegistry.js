@@ -110,6 +110,40 @@ registry.registerTool("save_research_note",  new SaveResearchNoteTool());
 registry.registerTool("create_task",         new CreateTaskTool());
 registry.registerTool("create_study_tasks",  new CreateStudyTasksTool());
 
+// ─── Extended Intelligence Tools ─────────────────────────────────────────────
+registry.registerTool("deep_research", {
+  async execute(action) {
+    const { executeDeepResearch } = await import("./research/deepResearchEngine.js");
+    const topic = action.input?.topic || action.input?.query || "AI Intelligence";
+    const res = await executeDeepResearch(topic);
+    return res.report;
+  }
+});
+
+registry.registerTool("code_analysis", {
+  async execute(action) {
+    const { processCodeTask } = await import("./code/codeAssistantService.js");
+    const res = await processCodeTask({
+      action: action.action || "explain",
+      codeSnippet: action.input?.code || action.input?.snippet || "",
+      filename: action.input?.filename || "file",
+      question: action.input?.question || "",
+    });
+    return res.answer;
+  }
+});
+
+registry.registerTool("vision_analysis", {
+  async execute(action) {
+    const { analyzeImage } = await import("./multimodal/visionEngine.js");
+    const res = await analyzeImage({
+      image: action.input?.image || action.input?.dataUrl || "",
+      prompt: action.input?.prompt || "Analyze this image",
+    });
+    return res.analysis;
+  }
+});
+
 // ─── Phase 3 — Confirmation-Gated Tools ──────────────────────────────────────
 registry.registerTool("email_draft",         new EmailDraftTool());
 

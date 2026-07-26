@@ -525,11 +525,58 @@ export async function routeRequest(
   }
 
   // =====================
+  // RESEARCH TOOL
+  // =====================
+
+  if (aiTool === "research") {
+    const { executeDeepResearch } = await import("./research/deepResearchEngine.js");
+    const res = await executeDeepResearch(message);
+    return {
+      tool: "research",
+      answer: res.report,
+      executedSteps: [
+        { name: "deep_research", status: "completed" }
+      ]
+    };
+  }
+
+  // =====================
+  // CODE ASSISTANCE TOOL
+  // =====================
+
+  if (aiTool === "code") {
+    const { processCodeTask } = await import("./code/codeAssistantService.js");
+    const res = await processCodeTask({ action: "explain", codeSnippet: message });
+    return {
+      tool: "code",
+      answer: res.answer,
+      executedSteps: [
+        { name: "code_assistance", status: "completed" }
+      ]
+    };
+  }
+
+  // =====================
+  // VISION TOOL
+  // =====================
+
+  if (aiTool === "vision") {
+    const { analyzeImage } = await import("./multimodal/visionEngine.js");
+    const res = await analyzeImage({ prompt: message });
+    return {
+      tool: "vision",
+      answer: res.analysis,
+      executedSteps: [
+        { name: "vision_ocr_analysis", status: res.ok ? "completed" : "failed" }
+      ]
+    };
+  }
+
+  // =====================
   // NORMAL CHAT
   // =====================
 
   const { askAI } = await import("./ai.js");
-
   const answer = await askAI(message, toolContext);
 
   return {

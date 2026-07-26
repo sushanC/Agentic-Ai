@@ -271,7 +271,6 @@ app.post(
         res.setHeader("Content-Type", "text/plain");
         res.setHeader("Transfer-Encoding", "chunked");
         res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
-        res.write(result.answer);
         return res.end();
       }
 

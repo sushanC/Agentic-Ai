@@ -19,6 +19,9 @@ import { askModelCie } from "./ai.js";
  *   memory_lookup         — retrieve from memory
  *   pdf_search            — search uploaded PDFs
  *   email_draft           — prepare an email draft for user confirmation (Phase 3)
+ *   deep_research         — execute autonomous multi-step deep research
+ *   code_analysis         — analyze, debug, refactor, or generate unit tests for code
+ *   vision_analysis       — perform OCR and multimodal vision reasoning on images/screenshots
  *
  *   --- Phase 2: Desktop Control ---
  *   desktop_open_app      — open/launch an application by name (e.g. VS Code, Chrome, Terminal)

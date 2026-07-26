@@ -53,7 +53,10 @@ export async function decideTool(
     "note",
     "pdf",
     "web",
-    "chat"
+    "chat",
+    "research",
+    "code",
+    "vision"
   ];
 
   if (

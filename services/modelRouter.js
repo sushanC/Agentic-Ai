@@ -48,6 +48,9 @@ const TOOL_INTENT_OVERRIDES = Object.freeze({
   memory:   "Memory",
   agent:    "AgentWorkflow",
   planning: "AgentWorkflow",
+  research: "Research",
+  code:     "Programming",
+  vision:   "Vision",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
