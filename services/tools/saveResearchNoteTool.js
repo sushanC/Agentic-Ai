@@ -1,5 +1,5 @@
 import { getResearch } from "../researchCache.js";
-import { loadNotes, saveNotes } from "../../storage/notesStorage.js";
+import { loadNotes, saveNotes } from "../../features/notes/index.js";
 import { incrementStat } from "../../storage/statsStorage.js";
 import { addActivity } from "../../storage/activityStorage.js";
 

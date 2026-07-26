@@ -26,7 +26,7 @@ import {
 
 import {
   handleTasks
-} from "./handlers/tasksHandler.js";
+} from "./features/tasks/index.js";
 
 import {
   handleMemory
@@ -34,7 +34,7 @@ import {
 
 import {
   handleNotes
-} from "./handlers/notesHandler.js";
+} from "./features/notes/index.js";
 
 import {
   handleDSA

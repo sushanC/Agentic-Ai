@@ -1,6 +1,6 @@
 import { getResearch } from "../researchCache.js";
 import { extractTasks } from "../taskExtractor.js";
-import { loadTasks, saveTasks } from "../../storage/tasksStorage.js";
+import { loadTasks, saveTasks } from "../../features/tasks/index.js";
 import { incrementStat } from "../../storage/statsStorage.js";
 import { addActivity } from "../../storage/activityStorage.js";
 

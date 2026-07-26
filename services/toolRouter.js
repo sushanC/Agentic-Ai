@@ -420,7 +420,7 @@ export async function routeRequest(
   ) {
 
     const { loadTasks, saveTasks } =
-      await import("../storage/tasksStorage.js");
+      await import("../features/tasks/index.js");
 
     const taskText = message
       .replace(/add task/i, "")
@@ -502,7 +502,7 @@ export async function routeRequest(
   if (aiTool === "note") {
 
     const { loadNotes, saveNotes } =
-      await import("../storage/notesStorage.js");
+      await import("../features/notes/index.js");
 
     const notes = await loadNotes();
 

@@ -41,13 +41,15 @@ import {
 
 import {
   loadNotes,
-  saveNotes
-} from "./storage/notesStorage.js";
+  saveNotes,
+  noteRoutes
+} from "./features/notes/index.js";
 
 import {
   loadTasks,
-  saveTasks
-} from "./storage/tasksStorage.js";
+  saveTasks,
+  taskRoutes
+} from "./features/tasks/index.js";
 
 import {
   updateSummary
@@ -416,145 +418,16 @@ app.delete(
 );
 
 // ============================================================
-// GET /notes
-// POST /notes
-// PUT /notes/:id
-// DELETE /notes/:id
+// Notes Routes (Refactored into features/notes)
 // ============================================================
 
-app.get(
-  "/notes",
-  async (req, res) => {
-    const notes = await loadNotes();
-    res.json(notes);
-  }
-);
-
-app.post(
-  "/notes",
-  async (req, res) => {
-
-    const { content } = req.body;
-    const notes = await loadNotes();
-
-    notes.push({
-      id: Date.now(),
-      content
-    });
-
-    await saveNotes(notes);
-    await incrementStat("notes_saved");
-
-    res.json({ success: true });
-  }
-);
-
-app.put(
-  "/notes/:id",
-  async (req, res) => {
-
-    const { content } = req.body;
-    const notes = await loadNotes();
-
-    const note = notes.find(
-      n => n.id === Number(req.params.id)
-    );
-
-    if (note) {
-      note.content = content;
-    }
-
-    await saveNotes(notes);
-
-    res.json({ success: true });
-  }
-);
-
-app.delete(
-  "/notes/:id",
-  async (req, res) => {
-
-    const notes = await loadNotes();
-
-    const updated = notes.filter(
-      note => note.id !== Number(req.params.id)
-    );
-
-    await saveNotes(updated);
-
-    res.json({ success: true });
-  }
-);
+app.use("/notes", noteRoutes);
 
 // ============================================================
-// GET /tasks
-// POST /tasks
-// PUT /tasks/:id
-// DELETE /tasks/:id
+// Tasks Routes (Refactored into features/tasks)
 // ============================================================
 
-app.get(
-  "/tasks",
-  async (req, res) => {
-    const tasks = await loadTasks();
-    res.json(tasks);
-  }
-);
-
-app.post(
-  "/tasks",
-  async (req, res) => {
-
-    const { text } = req.body;
-    const tasks = await loadTasks();
-
-    tasks.push({
-      id: Date.now(),
-      text,
-      completed: false
-    });
-
-    await saveTasks(tasks);
-    await incrementStat("tasks_created");
-
-    res.json({ success: true });
-  }
-);
-
-app.put(
-  "/tasks/:id",
-  async (req, res) => {
-
-    const tasks = await loadTasks();
-
-    const task = tasks.find(
-      t => t.id === Number(req.params.id)
-    );
-
-    if (task) {
-      task.completed = !task.completed;
-      await saveTasks(tasks);
-    }
-
-    res.json({ success: true });
-  }
-);
-
-app.delete(
-  "/tasks/:id",
-  async (req, res) => {
-
-    const tasks = await loadTasks();
-
-    const updated = tasks.filter(
-      task => task.id !== Number(req.params.id)
-    );
-
-    await saveTasks(updated);
-
-    res.json({ success: true });
-  }
-);
+app.use("/tasks", taskRoutes);
 
 // ============================================================
 // POST /pdf/upload
