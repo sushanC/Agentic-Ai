@@ -338,7 +338,7 @@ export async function routeRequest(
   if (text === "show memory") {
 
     const { loadMemory } =
-      await import("../storage/memoryStorage.js");
+      await import("../features/memory/index.js");
 
     const memory = await loadMemory();
 
@@ -454,7 +454,7 @@ export async function routeRequest(
   if (text.startsWith("remember")) {
 
     const { updateMemory } =
-      await import("./memoryService.js");
+      await import("../features/memory/index.js");
 
     const memoryText = message
       .replace(/remember/i, "")
@@ -478,7 +478,7 @@ export async function routeRequest(
   if (text.startsWith("forget ")) {
 
     const { deleteMemoryKey } =
-      await import("../storage/memoryStorage.js");
+      await import("../features/memory/index.js");
 
     const key = message
       .replace(/forget/i, "")

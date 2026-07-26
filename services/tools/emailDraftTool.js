@@ -2,7 +2,7 @@ import { createPending } from "../confirmationService.js";
 import { addActivity } from "../../storage/activityStorage.js";
 import { sendEmail } from "../gmailService.js";
 import { askModelCie } from "../ai.js";
-import { loadMemory, saveMemory } from "../../storage/memoryStorage.js";
+import { loadMemory, saveMemory } from "../../features/memory/index.js";
 
 /**
  * emailDraftTool.js

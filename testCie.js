@@ -8,7 +8,7 @@ import { getDynamicHistory } from "./services/cie/HistoryManager.js";
 import { getCompressedSummary } from "./services/cie/SummaryManager.js";
 import { optimizeContext } from "./services/cie/TokenBudgetManager.js";
 import { runCiePipeline, buildSummaryContext } from "./services/cie/index.js";
-import { saveMemory } from "./storage/memoryStorage.js";
+import { saveMemory } from "./features/memory/index.js";
 import { saveSummary } from "./storage/summaryStorage.js";
 import { addMessage } from "./services/historyService.js";
 import { loadSettings } from "./storage/settingsStorage.js";

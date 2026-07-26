@@ -1,4 +1,4 @@
-import { loadMemory } from "../../storage/memoryStorage.js";
+import { loadMemory } from "../../features/memory/index.js";
 import { getEmbedding, cosineSimilarity } from "../embeddingService.js";
 import { getContextConfig } from "./ContextManager.js";
 

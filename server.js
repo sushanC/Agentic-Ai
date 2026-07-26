@@ -81,19 +81,17 @@ import {
 } from "./services/toolRouter.js";
 
 import {
-  updateMemory
-} from "./services/memoryService.js";
+  updateMemory,
+  loadMemory,
+  saveMemory,
+  deleteMemoryKey,
+  memoryRoutes
+} from "./features/memory/index.js";
 
 import {
   getRecentHistory,
   addMessage
 } from "./services/historyService.js";
-
-import {
-  loadMemory,
-  saveMemory,
-  deleteMemoryKey
-} from "./storage/memoryStorage.js";
 
 import {
   loadHistory
@@ -361,61 +359,10 @@ app.get(
 );
 
 // ============================================================
-// GET /memory
-// POST handled via /chat with "remember ..."
-// DELETE /memory/:key
+// Memory Routes (Refactored into features/memory)
 // ============================================================
 
-app.get(
-  "/memory",
-  async (req, res) => {
-
-    try {
-
-      const memory = await loadMemory();
-
-      const facts = Object.entries(memory)
-        .map(([key, value]) => ({
-          id: key,
-          text: Array.isArray(value)
-            ? value.join(", ")
-            : String(value),
-          category: key
-        }));
-
-      res.json(facts);
-
-    } catch (err) {
-
-      console.error(err);
-
-      res.status(500).json({
-        error: "Failed to load memory"
-      });
-    }
-  }
-);
-
-app.delete(
-  "/memory/:key",
-  async (req, res) => {
-
-    try {
-
-      await deleteMemoryKey(req.params.key);
-
-      res.json({ success: true });
-
-    } catch (err) {
-
-      console.error(err);
-
-      res.status(500).json({
-        error: "Failed to delete memory"
-      });
-    }
-  }
-);
+app.use("/memory", memoryRoutes);
 
 // ============================================================
 // Notes Routes (Refactored into features/notes)

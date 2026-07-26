@@ -32,7 +32,7 @@ import { detectIntentFull } from "./cie/IntentDetector.js";
 import { selectModel } from "./modelSelection/index.js";
 import { emitDevEvent } from "./developerBridge.js";
 
-import { loadMemory } from "../storage/memoryStorage.js";
+import { loadMemory } from "../features/memory/index.js";
 import { getRecentHistory } from "./historyService.js";
 import { loadSummary } from "../storage/summaryStorage.js";
 import { SYSTEM_PROMPT } from "./systemPrompt.js";

@@ -30,7 +30,7 @@ import {
 
 import {
   handleMemory
-} from "./handlers/memoryHandler.js";
+} from "./features/memory/index.js";
 
 import {
   handleNotes

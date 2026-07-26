@@ -4,7 +4,7 @@ import { listen } from "../sttService.js";
 import { generateTTS } from "../ttsService.js";
 import { routeRequest } from "../toolRouter.js";
 import { addMessage } from "../historyService.js";
-import { updateMemory } from "../memoryService.js";
+import { updateMemory } from "../../features/memory/index.js";
 import { updateSummary } from "../summaryService.js";
 import { incrementStat } from "../../storage/statsStorage.js";
 import { loadSettings } from "../../storage/settingsStorage.js";
