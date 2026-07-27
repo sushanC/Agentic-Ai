@@ -1,32 +1,9 @@
-import {
-  loadPDFMemory
-} from "../storage/pdfStorage.js";
+import { loadPDFMemory } from "./pdfStorage.js";
+import { getEmbedding, cosineSimilarity } from "../../services/embeddingService.js";
+import { askAI } from "../../services/ai.js";
+import { incrementStat } from "../../storage/statsStorage.js";
 
-import {
-  getEmbedding,
-  cosineSimilarity
-} from "./embeddingService.js";
-
-import {
-  askAI
-} from "./ai.js";
-
-import {
-  incrementStat
-} from "../storage/statsStorage.js";
-
-/**
- * Answer a question using the content of
- * a specific uploaded PDF via semantic search.
- *
- * @param {string} pdfName - Key in pdf_memory.json
- * @param {string} question - User's question
- */
-export async function askPDF(
-  pdfName,
-  question
-) {
-
+export async function askPDF(pdfName, question) {
   const memory = await loadPDFMemory();
   const chunks = memory[pdfName];
 
@@ -34,15 +11,11 @@ export async function askPDF(
     return `PDF not found: "${pdfName}". Please upload it first.`;
   }
 
-  const questionEmbedding =
-    await getEmbedding(question);
+  const questionEmbedding = await getEmbedding(question);
 
   const scoredChunks = chunks.map(chunk => ({
     text: chunk.text,
-    score: cosineSimilarity(
-      questionEmbedding,
-      chunk.embedding
-    )
+    score: cosineSimilarity(questionEmbedding, chunk.embedding)
   }));
 
   scoredChunks.sort((a, b) => b.score - a.score);
@@ -57,7 +30,6 @@ export async function askPDF(
     .map(chunk => chunk.text)
     .join("\n\n");
 
-  // Build a clean document name for the prompt
   const docLabel = pdfName
     .split("/")
     .pop()
@@ -87,7 +59,6 @@ Answer:
   console.log(topChunks);
   console.log("\n======================\n");
 
-  // Track stat
   await incrementStat("pdf_queries");
 
   return await askAI(prompt, "pdf");

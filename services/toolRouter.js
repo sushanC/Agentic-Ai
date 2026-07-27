@@ -1,6 +1,6 @@
 import {
   loadPDFMemory
-} from "../storage/pdfStorage.js";
+} from "../features/pdf/index.js";
 
 import {
   getEmbedding,
@@ -397,7 +397,7 @@ export async function routeRequest(
     console.log("\n🤖 PDF Tool Triggered");
 
     const { askPDF } =
-      await import("./pdfQAService.js");
+      await import("../features/pdf/index.js");
 
     const answer = await askPDF(pdfName, message);
 

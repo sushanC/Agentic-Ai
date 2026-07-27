@@ -22,7 +22,7 @@ import {
 
 import {
   handlePDF
-} from "./handlers/pdfHandler.js";
+} from "./features/pdf/index.js";
 
 import {
   handleTasks
