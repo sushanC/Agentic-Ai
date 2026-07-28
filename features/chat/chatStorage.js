@@ -2,8 +2,7 @@ import fs from "fs/promises";
 
 import {
   getStoragePath
-}
-from "./storagePath.js";
+} from "../../storage/storagePath.js";
 
 const HISTORY_FILE =
   getStoragePath(

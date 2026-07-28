@@ -1,4 +1,4 @@
-import { getRecentHistory } from "../historyService.js";
+import { getRecentHistory } from "../../features/chat/index.js";
 import { getContextConfig } from "./ContextManager.js";
 
 export async function getDynamicHistory(intent, settings = {}) {

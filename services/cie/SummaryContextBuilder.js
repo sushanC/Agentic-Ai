@@ -1,5 +1,5 @@
 import { runCiePipeline } from "./index.js";
-import { loadHistory } from "../../storage/chatHistoryStorage.js";
+import { loadHistory } from "../../features/chat/index.js";
 import { loadSummary } from "../../storage/summaryStorage.js";
 
 /**

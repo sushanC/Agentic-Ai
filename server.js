@@ -79,12 +79,11 @@ import {
 
 import {
   getRecentHistory,
-  addMessage
-} from "./services/historyService.js";
-
-import {
-  loadHistory
-} from "./storage/chatHistoryStorage.js";
+  addMessage,
+  loadHistory,
+  getHistory,
+  chatRoutes
+} from "./features/chat/index.js";
 
 import {
   getActivities
@@ -112,40 +111,11 @@ app.use(cors());
 app.use(express.json());
 
 // ============================================================
-// POST /chat
-// Standard (non-streaming) chat endpoint
+// Chat Routes (Refactored into features/chat)
 // ============================================================
 
-app.post(
-  "/chat",
-  async (req, res) => {
-
-    try {
-
-      const { message } = req.body;
-
-      await addMessage("user", message);
-      await updateMemory(message);
-
-      const result = await routeRequest(message);
-      const reply = result.answer;
-
-      await addMessage("assistant", reply);
-      await updateSummary();
-      await incrementStat("messages");
-
-      res.json({ reply });
-
-    } catch (err) {
-
-      console.error(err);
-
-      res.status(500).json({
-        error: "AI request failed"
-      });
-    }
-  }
-);
+app.use("/chat", chatRoutes);
+app.get("/history", getHistory);
 
 // ============================================================
 // POST /voice
@@ -170,167 +140,6 @@ app.post(
 
       res.status(500).json({
         error: "Voice failed"
-      });
-    }
-  }
-);
-
-// ============================================================
-// POST /chat/stream
-// Streaming chat endpoint (used by frontend)
-// ============================================================
-
-app.post(
-  "/chat/stream",
-  async (req, res) => {
-
-    try {
-
-      const { message } = req.body;
-
-      // Run memory extraction ONCE
-      await updateMemory(message);
-
-      const result = await routeRequest(message);
-
-      // Tool-based results (agent, web, pdf, task, note, memory)
-      // — return immediately without streaming
-      if (result.tool !== "chat") {
-        const modelInfo = getLastModelUsed();
-        const timelinePayload = {
-          model: modelInfo.name,
-          modelName: modelInfo.displayName,
-          provider: modelInfo.provider,
-          steps: [
-            ...(result.executedSteps || []),
-            { name: modelInfo.displayName, status: "completed", isModel: true }
-          ]
-        };
-
-        // ── Phase 3: Confirmation Workflow ──────────────────────────────────
-        // If a tool returned a pending_confirmation object, serialize it
-        // as a special marker that the frontend can detect and parse.
-        // Format: __CONFIRMATION__:<json>
-        // The frontend strips the prefix and renders a ConfirmationCard.
-        if (result.tool === "confirmation") {
-          res.setHeader("Content-Type", "text/plain");
-          res.setHeader("Transfer-Encoding", "chunked");
-          
-          // Inject confirmation-specific timeline step
-          timelinePayload.steps = [
-            ...(result.executedSteps || []),
-            { name: "confirmation", status: "completed" }
-          ];
-          res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
-          res.write("__CONFIRMATION__:" + JSON.stringify(result.answer));
-          return res.end();
-        }
-
-        // ── Phase 5: Waiting Input ────────────────────────────────────────
-        // When the email tool needs missing information (e.g. recipient email),
-        // write __WAITING_INPUT__:<json> so the frontend renders a question card.
-        // Protocol marker: "__WAITING_INPUT__:" + JSON.stringify(payload)
-        // The frontend detects this prefix in useChat.js and renders a WaitingInputCard.
-        if (result.tool === "waiting_input") {
-          const waitingPayload = result.answer && typeof result.answer === "object"
-            ? result.answer
-            : { status: "waiting_input", error: "invalid payload" };
-
-          console.log("\n📧 Streaming __WAITING_INPUT__:");
-          console.log(JSON.stringify(waitingPayload, null, 2));
-
-          res.setHeader("Content-Type", "text/plain");
-          res.setHeader("Transfer-Encoding", "chunked");
-          
-          // Inject waiting_input-specific timeline step
-          timelinePayload.steps = [
-            ...(result.executedSteps || []),
-            { name: "waiting_input", status: "completed" }
-          ];
-          res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
-          res.write("__WAITING_INPUT__:" + JSON.stringify(waitingPayload));
-          return res.end();
-        }
-        // ────────────────────────────────────────────────────────────────────
-
-        await addMessage("user", message);
-        await addMessage("assistant", result.answer);
-        await incrementStat("messages");
-
-        res.setHeader("Content-Type", "text/plain");
-        res.setHeader("Transfer-Encoding", "chunked");
-        res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
-        return res.end();
-      }
-
-      // Normal chat — stream via Groq
-      res.setHeader("Content-Type", "text/plain");
-      res.setHeader("Transfer-Encoding", "chunked");
-
-      await addMessage("user", message);
-
-      console.log("\n💬 USER:");
-      console.log(message);
-
-      const stream = await askGroqStream(message);
-      
-      const modelInfo = getLastModelUsed();
-      const timelinePayload = {
-        model: modelInfo.name,
-        modelName: modelInfo.displayName,
-        provider: modelInfo.provider,
-        steps: [
-          { name: modelInfo.displayName, status: "running", isModel: true }
-        ]
-      };
-      res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
-
-      let fullResponse = "";
-
-      for await (const chunk of stream) {
-
-        const content =
-          chunk.choices?.[0]?.delta?.content;
-
-        if (content) {
-          fullResponse += content;
-          res.write(content);
-        }
-      }
-
-      await addMessage("assistant", fullResponse);
-      await updateSummary();
-      await incrementStat("messages");
-
-      res.end();
-
-    } catch (err) {
-
-      console.error(err);
-      res.status(500).end();
-    }
-  }
-);
-
-// ============================================================
-// GET /history
-// ============================================================
-
-app.get(
-  "/history",
-  async (req, res) => {
-
-    try {
-
-      const history = await loadHistory();
-      res.json(history);
-
-    } catch (err) {
-
-      console.error(err);
-
-      res.status(500).json({
-        error: "Failed to load history"
       });
     }
   }
@@ -504,7 +313,7 @@ app.post(
       if (Array.isArray(history)) {
         const {
           saveHistory
-        } = await import("./storage/chatHistoryStorage.js");
+        } = await import("./features/chat/index.js");
         ops.push(saveHistory(history));
       }
 

@@ -11,7 +11,7 @@
 import {
   loadHistory,
   saveHistory
-} from "../storage/chatHistoryStorage.js";
+} from "../features/chat/index.js";
 
 import {
   loadSummary,

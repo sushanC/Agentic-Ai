@@ -3,7 +3,7 @@ import { VoiceQueue } from "./VoiceQueue.js";
 import { listen } from "../sttService.js";
 import { generateTTS } from "../ttsService.js";
 import { routeRequest } from "../toolRouter.js";
-import { addMessage } from "../historyService.js";
+import { addMessage } from "../../features/chat/index.js";
 import { updateMemory } from "../../features/memory/index.js";
 import { updateSummary } from "../summaryService.js";
 import { incrementStat } from "../../storage/statsStorage.js";

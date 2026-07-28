@@ -10,7 +10,7 @@ import { optimizeContext } from "./services/cie/TokenBudgetManager.js";
 import { runCiePipeline, buildSummaryContext } from "./services/cie/index.js";
 import { saveMemory } from "./features/memory/index.js";
 import { saveSummary } from "./storage/summaryStorage.js";
-import { addMessage } from "./services/historyService.js";
+import { addMessage } from "./features/chat/index.js";
 import { loadSettings } from "./storage/settingsStorage.js";
 import { askModelCie } from "./services/ai.js";
 import { groqProvider } from "./services/providers/groqProvider.js";

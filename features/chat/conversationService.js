@@ -1,7 +1,7 @@
 import {
   loadHistory,
   saveHistory
-} from "../storage/chatHistoryStorage.js";
+} from "./chatStorage.js";
 
 export async function addMessage(
   role,
@@ -12,11 +12,8 @@ export async function addMessage(
     await loadHistory();
 
   history.push({
-
     role,
-
     content,
-
     timestamp:
       Date.now()
   });
