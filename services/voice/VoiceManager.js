@@ -7,7 +7,7 @@ import { addMessage } from "../../features/chat/index.js";
 import { updateMemory } from "../../features/memory/index.js";
 import { updateSummary } from "../summaryService.js";
 import { incrementStat } from "../../storage/statsStorage.js";
-import { loadSettings } from "../../storage/settingsStorage.js";
+import { loadSettings } from "../../features/settings/index.js";
 import { emitDevEvent, beginRequest, endRequest } from "../developerBridge.js";
 import { perfMonitor } from "./VoicePerformanceMonitor.js";
 import { voiceMetrics } from "./VoicePerformanceMetrics.js";

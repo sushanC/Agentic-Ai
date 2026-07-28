@@ -11,7 +11,7 @@ import { runCiePipeline, buildSummaryContext } from "./services/cie/index.js";
 import { saveMemory } from "./features/memory/index.js";
 import { saveSummary } from "./storage/summaryStorage.js";
 import { addMessage } from "./features/chat/index.js";
-import { loadSettings } from "./storage/settingsStorage.js";
+import { loadSettings } from "./features/settings/index.js";
 import { askModelCie } from "./services/ai.js";
 import { groqProvider } from "./services/providers/groqProvider.js";
 import { ollamaProvider } from "./services/providers/ollamaProvider.js";

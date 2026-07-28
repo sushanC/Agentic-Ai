@@ -1,16 +1,10 @@
-// storage/settingsStorage.js
-
 import fs from "fs/promises";
-import { getStoragePath } from "./storagePath.js";
+import { getStoragePath } from "../../storage/storagePath.js";
 
-const SETTINGS_FILE =
-  getStoragePath("settings.json");
+const SETTINGS_FILE = getStoragePath("settings.json");
 
 /**
  * Default settings structure.
- * model: "auto" — use smart routing via the Model Registry.
- * capabilityRoutes: {} — per-capability model overrides set by the user in Settings.
- *   e.g. { "coding": "gemini", "writing": "groq" }
  */
 const DEFAULT_SETTINGS = {
   model: "auto",
@@ -39,19 +33,10 @@ const DEFAULT_SETTINGS = {
 };
 
 export async function loadSettings() {
-
   try {
-
-    const data =
-      await fs.readFile(
-        SETTINGS_FILE,
-        "utf-8"
-      );
-
+    const data = await fs.readFile(SETTINGS_FILE, "utf-8");
     const parsed = JSON.parse(data);
 
-    // Deep merge with defaults to ensure all keys are present
-    // even if the settings file was written by an older version.
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
@@ -60,19 +45,12 @@ export async function loadSettings() {
         ...(parsed.capabilityRoutes || {})
       }
     };
-
   } catch {
-
     return { ...DEFAULT_SETTINGS };
   }
 }
 
-export async function saveSettings(
-  settings
-) {
-
-  // Load existing settings and deep-merge so partial
-  // saves (e.g. only capabilityRoutes) don't clobber other keys.
+export async function saveSettings(settings) {
   let existing = { ...DEFAULT_SETTINGS };
   try {
     const data = await fs.readFile(SETTINGS_FILE, "utf-8");
@@ -92,10 +70,6 @@ export async function saveSettings(
 
   await fs.writeFile(
     SETTINGS_FILE,
-    JSON.stringify(
-      merged,
-      null,
-      2
-    )
+    JSON.stringify(merged, null, 2)
   );
 }

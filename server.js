@@ -91,8 +91,9 @@ import {
 
 import {
   loadSettings,
-  saveSettings
-} from "./storage/settingsStorage.js";
+  saveSettings,
+  settingsRoutes
+} from "./features/settings/index.js";
 
 import {
   loadStats,
@@ -181,25 +182,10 @@ app.use("/tasks", taskRoutes);
 app.use("/pdf", pdfRoutes);
 
 // ============================================================
-// GET /settings
-// POST /settings
+// Settings Routes (Refactored into features/settings)
 // ============================================================
 
-app.get(
-  "/settings",
-  async (req, res) => {
-    const settings = await loadSettings();
-    res.json(settings);
-  }
-);
-
-app.post(
-  "/settings",
-  async (req, res) => {
-    await saveSettings(req.body);
-    res.json({ success: true });
-  }
-);
+app.use("/settings", settingsRoutes);
 
 // ============================================================
 // GET /stats
@@ -814,7 +800,7 @@ app.get(
   "/models/capabilities",
   async (req, res) => {
     try {
-      const { loadSettings } = await import("./storage/settingsStorage.js");
+      const { loadSettings } = await import("./features/settings/index.js");
       const settings = await loadSettings();
       const overrides = settings.capabilityRoutes || {};
 

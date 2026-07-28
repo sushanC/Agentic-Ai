@@ -9,7 +9,7 @@ import { resolveModel, getModel } from "./modelRegistry.js";
 import { SYSTEM_PROMPT } from "./systemPrompt.js";
 import { cleanResponse } from "./responseCleaner.js";
 import { decideModel } from "./modelRouter.js";
-import { loadSettings } from "../storage/settingsStorage.js";
+import { loadSettings } from "../features/settings/index.js";
 
 // Import Context Intelligence Engine
 import { runCiePipeline, buildPrompt } from "./cie/index.js";
