@@ -2,6 +2,8 @@ import asyncio
 import edge_tts
 import sys
 import argparse
+import sys
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="samGPT TTS Script using Edge-TTS")
@@ -13,7 +15,10 @@ def parse_args():
     parser.add_argument("--output", type=str, default="speech.mp3", help="Output audio file path")
     return parser.parse_known_args()
 
+
 async def main():
+    print("ARGV:", repr(sys.argv), file=sys.stderr)
+
     args, unknown = parse_args()
     
     # Handle backward compatibility: if no flags are matched but we have arguments,

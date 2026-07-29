@@ -20,6 +20,7 @@ export class VoiceQueue {
     this.onPlayFinish = null;
     this.onEmpty = null;
     this.onError = null;
+    this.speakerSelection = null;
   }
 
   /**
@@ -71,7 +72,7 @@ export class VoiceQueue {
    */
   cancel() {
     console.log("[VoiceQueue] Cancelling playback and clearing queue...");
-    
+
     // Kill active process
     if (this.currentProcess) {
       try {
@@ -96,10 +97,24 @@ export class VoiceQueue {
 
     this.isPlaying = false;
     this.isPaused = false;
-    
+
     if (this.onPlayFinish) {
       this.onPlayFinish();
     }
+  }
+
+  /**
+   * Alias for cancel() for backward compatibility.
+   */
+  stop() {
+    this.cancel();
+  }
+
+  /**
+   * Alias for cancel() for backward compatibility.
+   */
+  clear() {
+    this.cancel();
   }
 
   /**
@@ -161,7 +176,7 @@ export class VoiceQueue {
         clearTimeout(hangTimeout);
         console.log(`[VoiceQueue] Playback process closed with code ${code}`);
         this.currentProcess = null;
-        
+
         // Delete current file after it finishes playing
         if (this.currentFile) {
           this._deleteFile(this.currentFile);

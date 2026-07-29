@@ -39,9 +39,9 @@ export class VoiceStateMachine {
       error: ["idle"]
     };
 
-    const isAllowed = 
-      newState === "idle" || 
-      newState === "error" || 
+    const isAllowed =
+      newState === "idle" ||
+      newState === "error" ||
       (validTransitions[oldState] && validTransitions[oldState].includes(newState));
 
     if (!isAllowed) {
@@ -51,7 +51,7 @@ export class VoiceStateMachine {
 
     this._state = newState;
     console.log(`[VoiceStateMachine] State changed: ${oldState.toUpperCase()} -> ${newState.toUpperCase()}`);
-    
+
     try {
       this._onStateChange(newState, oldState);
     } catch (err) {

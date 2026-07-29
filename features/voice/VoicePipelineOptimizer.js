@@ -5,7 +5,7 @@
  * Enables low-latency audio playback (playback starts as soon as sentence 1 completes generation).
  */
 
-import { generateTTS } from "../ttsService.js";
+import { generateTTS } from "./ttsService.js";
 
 export class VoicePipelineOptimizer {
   constructor(voiceQueue, settings = {}) {
@@ -82,11 +82,9 @@ export class VoicePipelineOptimizer {
       let match;
       let lastIndex = 0;
 
-      // Extract complete sentences from buffer
       while ((match = sentenceRegex.exec(buffer)) !== null) {
         const sentence = match[1];
         lastIndex = sentenceRegex.lastIndex;
-        // Non-blocking sentence synthesis
         synthesizeSentence(sentence);
       }
 
@@ -96,7 +94,6 @@ export class VoicePipelineOptimizer {
       }
     }
 
-    // Process any remaining text in buffer after stream ends
     if (buffer.trim() && !this.isCancelled) {
       await synthesizeSentence(buffer);
     }

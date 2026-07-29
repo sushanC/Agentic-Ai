@@ -1,12 +1,5 @@
-/**
- * VoicePerformanceMetrics.js
- *
- * Provides high-precision sub-phase telemetry tracking for Developer Console observability.
- * Tracks all 11+ voice response sub-latencies and metadata.
- */
-
 import { performance } from "perf_hooks";
-import { emitDevEvent } from "../developerBridge.js";
+import { emitDevEvent } from "../../services/developerBridge.js";
 
 class VoicePerformanceMetrics {
   constructor() {

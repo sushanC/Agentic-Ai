@@ -1,14 +1,14 @@
 import { VoiceStateMachine } from "./VoiceStateMachine.js";
 import { VoiceQueue } from "./VoiceQueue.js";
-import { listen } from "../sttService.js";
-import { generateTTS } from "../ttsService.js";
-import { routeRequest } from "../toolRouter.js";
-import { addMessage } from "../../features/chat/index.js";
-import { updateMemory } from "../../features/memory/index.js";
-import { updateSummary } from "../summaryService.js";
+import { listen } from "./sttService.js";
+import { generateTTS } from "./ttsService.js";
+import { routeRequest } from "../../services/toolRouter.js";
+import { addMessage } from "../chat/index.js";
+import { updateMemory } from "../memory/index.js";
+import { updateSummary } from "../../services/summaryService.js";
 import { incrementStat } from "../../storage/statsStorage.js";
-import { loadSettings } from "../../features/settings/index.js";
-import { emitDevEvent, beginRequest, endRequest } from "../developerBridge.js";
+import { loadSettings } from "../settings/index.js";
+import { emitDevEvent, beginRequest, endRequest } from "../../services/developerBridge.js";
 import { perfMonitor } from "./VoicePerformanceMonitor.js";
 import { voiceMetrics } from "./VoicePerformanceMetrics.js";
 import { shouldExtractMemory, isShortcutQuery, getVoiceCieOptions } from "./VoiceLatencyOptimizer.js";
@@ -42,7 +42,7 @@ class VoiceManager {
         voiceMetrics.start("playback");
       }
     };
-    
+
     this.queue.onEmpty = () => {
       if (this.playbackActive) {
         perfMonitor.end("playback");
@@ -100,7 +100,7 @@ class VoiceManager {
     this.isActive = true;
     console.log("[VoiceManager] Jarvis Voice Assistant activated.");
     emitDevEvent("VoiceStarted", { msg: "Jarvis voice assistant active" });
-    
+
     if (this.settings?.conversationMode) {
       emitDevEvent("ConversationStarted", { msg: "Continuous conversation started" });
     }
@@ -118,7 +118,7 @@ class VoiceManager {
     this.stateMachine.transitionTo("idle");
     console.log("[VoiceManager] Jarvis Voice Assistant deactivated.");
     emitDevEvent("VoiceStopped", { reason: "User manual deactivate" });
-    
+
     if (this.settings?.conversationMode) {
       emitDevEvent("ConversationEnded", { reason: "User deactivated voice mode" });
     }
@@ -127,7 +127,7 @@ class VoiceManager {
   /**
    * Start recording input from the user.
    */
-  async startListening() {    
+  async startListening() {
     await this.init();
 
     // Interruption check: If speaking, stop it
@@ -184,13 +184,13 @@ class VoiceManager {
 
       const text = result.text ? result.text.trim() : "";
       this.currentText = text;
-      
+
       emitDevEvent("SpeechRecognized", { text });
 
       if (!text) {
         console.log("[VoiceManager] No speech detected.");
         emitDevEvent("SpeechRecognitionFailed", { error: "No speech detected" });
-        
+
         if (this.isActive && this.settings?.conversationMode) {
           console.log("[VoiceManager] Continuous conversation active. Retrying listening...");
           this.startListening();
@@ -240,10 +240,6 @@ class VoiceManager {
    * Send the transcribed user request to the AI routing pipeline.
    * @param {string} text
    */
-  /**
-   * Send the transcribed user request to the AI routing pipeline.
-   * @param {string} text
-   */
   async processRequest(text) {
     if (!this.stateMachine.transitionTo("processing")) {
       return;
@@ -282,9 +278,9 @@ class VoiceManager {
       await incrementStat("messages");
 
       perfMonitor.end("aiPipeline");
-      emitDevEvent("AIFinished", { 
+      emitDevEvent("AIFinished", {
         latencyMs: perfMonitor.getMetrics().aiPipeline || 0,
-        reply 
+        reply
       });
 
       this.currentReply = reply;
@@ -317,7 +313,7 @@ class VoiceManager {
     try {
       // Split reply into sentences to start speaking low-latency (first sentence first)
       const sentences = replyText.match(/[^.!?]+[.!?]+(\s|$)/g) || [replyText];
-      
+
       for (const sentence of sentences) {
         const trimmed = sentence.trim();
         if (!trimmed) continue;
@@ -328,7 +324,6 @@ class VoiceManager {
           speechPitch: this.settings?.speechPitch || "+0Hz",
           speechVolume: this.settings?.speechVolume || "+0%"
         });
-
         this.queue.enqueue(audioFile);
       }
 
@@ -381,8 +376,8 @@ class VoiceManager {
     if (typeof process.send === "function") {
       process.send({
         type: "VOICE_STATE_CHANGE",
-        payload: { 
-          state, 
+        payload: {
+          state,
           oldState,
           text: state === "processing" ? this.currentText : null,
           reply: state === "speaking" ? this.currentReply : null
@@ -402,11 +397,11 @@ class VoiceManager {
    */
   _startConversationTimer() {
     this._clearConversationTimer();
-    
+
     if (!this.settings?.conversationMode) return;
 
     const timeoutSec = this.settings?.conversationTimeout || 30;
-    
+
     this.conversationTimer = setTimeout(() => {
       console.log(`[VoiceManager] Conversation timed out after ${timeoutSec}s of silence.`);
       emitDevEvent("ConversationEnded", { reason: "Silence timeout reached" });

@@ -46,7 +46,7 @@ import {
 
 import {
   handleVoice
-} from "./handlers/voiceHandler.js";
+} from "./features/voice/index.js";
 
 import {
   updateSummary

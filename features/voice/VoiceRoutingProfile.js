@@ -22,8 +22,8 @@
  *   - Lowest queue time
  */
 
-import { getHealthScore as getProviderHealthScore, isAvailable as isProviderAvailable } from "../cie/ProviderHealthManager.js";
-import { getModelHealthScore } from "../modelSelection/HealthScorer.js";
+import { getHealthScore as getProviderHealthScore, isAvailable as isProviderAvailable } from "../../services/cie/ProviderHealthManager.js";
+import { getModelHealthScore } from "../../services/modelSelection/HealthScorer.js";
 
 export const VOICE_PRIORITY_ORDER = [
   "gemini",        // Gemini Flash
@@ -52,11 +52,6 @@ export function isSimpleGreeting(text) {
 /**
  * Check if Ollama is allowed for the given query & system state.
  * @param {object} options
- * @param {boolean} [options.offlineMode=false]
- * @param {boolean} [options.internetAvailable=true]
- * @param {boolean} [options.allCloudFailed=false]
- * @param {boolean} [options.forcedOllama=false]
- * @param {string}  [options.text=""]
  * @returns {boolean}
  */
 export function shouldAllowOllama({
@@ -80,12 +75,6 @@ export function shouldAllowOllama({
 /**
  * Rank candidate models for Voice Mode according to Voice Latency Profile.
  *
- * Scoring factors:
- *   - Base priority rank (Gemini Flash > Groq > OpenRouter > Ollama)
- *   - Provider health score
- *   - Model health score
- *   - Latency tier bonus
- *
  * @param {Array<object>} candidates - List of CandidateModel objects
  * @param {object} options
  * @returns {Array<object>} Ranked candidates
@@ -93,7 +82,6 @@ export function shouldAllowOllama({
 export function rankVoiceCandidates(candidates, options = {}) {
   const { text = "", offlineMode = false, internetAvailable = true, forcedOllama = false } = options;
 
-  // Determine if cloud providers are online/available
   const cloudCandidates = candidates.filter(c => c.provider !== "ollama" && isProviderAvailable(c.provider));
   const allCloudFailed = cloudCandidates.length === 0;
 
@@ -110,29 +98,26 @@ export function rankVoiceCandidates(candidates, options = {}) {
       if (candidate.provider === "ollama") {
         return allowOllama;
       }
-      return true; // Keep cloud candidates
+      return true;
     })
     .map(candidate => {
       let score = 100;
 
-      // 1. Voice Priority Order penalty/bonus
       const orderIndex = VOICE_PRIORITY_ORDER.indexOf(candidate.key) !== -1
         ? VOICE_PRIORITY_ORDER.indexOf(candidate.key)
         : VOICE_PRIORITY_ORDER.indexOf(candidate.provider);
 
       if (orderIndex !== -1) {
-        score -= orderIndex * 20; // 0 penalty for Gemini, 20 for Groq, 40 for OpenRouter, 60 for Ollama
+        score -= orderIndex * 20;
       } else {
         score -= 50;
       }
 
-      // 2. Health score multiplier (0.0 - 1.0)
       const modelHealth = getModelHealthScore(candidate.key);
       const providerHealth = getProviderHealthScore(candidate.provider) ?? 1.0;
-      
+
       score += (modelHealth * 15) + (providerHealth * 15);
 
-      // 3. Latency tier bonus for Voice (fastest response wins)
       if (candidate.latencyTier === "very_fast" || candidate.latency === "very_fast") {
         score += 20;
       } else if (candidate.latencyTier === "fast" || candidate.latency === "fast") {
@@ -141,7 +126,6 @@ export function rankVoiceCandidates(candidates, options = {}) {
         score -= 25;
       }
 
-      // 4. Force cloud over Ollama for simple greetings if cloud is active
       if (isSimpleGreeting(text) && candidate.provider !== "ollama") {
         score += 30;
       }

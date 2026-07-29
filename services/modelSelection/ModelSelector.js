@@ -34,7 +34,7 @@ import { scoreCandidate } from "./IntentScorer.js";
 import { logSelectionDiagnostics, buildDiagnosticsSummary } from "./SelectionDiagnostics.js";
 import { resolveCapability } from "../modelRegistry.js";
 import { getModelHealthScore, getCooldownRemaining, getModelHealth } from "./HealthScorer.js";
-import { rankVoiceCandidates } from "../voice/VoiceRoutingProfile.js";
+import { rankVoiceCandidates } from "../../features/voice/VoiceRoutingProfile.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal: score a list of available candidates and sort

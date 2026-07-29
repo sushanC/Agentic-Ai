@@ -15,8 +15,7 @@ import { getModelHealth, getCooldownRemaining, getModelHealthScore } from "./ser
 
 import { askAI, askGroqStream, getLastModelUsed } from "./services/ai.js";
 import { SYSTEM_PROMPT } from "./services/systemPrompt.js";
-import { handleVoice } from "./handlers/voiceHandler.js";
-import { voiceManager } from "./services/voice/VoiceManager.js";
+import { handleVoice, voiceManager, voiceRoutes } from "./features/voice/index.js";
 
 // Phase 3 — Confirmation Workflow
 import {
@@ -119,32 +118,10 @@ app.use("/chat", chatRoutes);
 app.get("/history", getHistory);
 
 // ============================================================
-// POST /voice
-// Voice input endpoint
+// Voice Routes (Refactored into features/voice)
 // ============================================================
 
-app.post(
-  "/voice",
-  async (req, res) => {
-
-    console.log("VOICE ROUTE HIT");
-
-    try {
-
-      const result = await handleVoice();
-      res.json(result);
-
-    } catch (err) {
-
-      console.error("VOICE ERROR:");
-      console.error(err);
-
-      res.status(500).json({
-        error: "Voice failed"
-      });
-    }
-  }
-);
+app.use("/voice", voiceRoutes);
 
 // ============================================================
 // GET /activities
@@ -830,7 +807,7 @@ app.get(
   "/audio/devices",
   async (req, res) => {
     try {
-      const { getAudioDevices } = await import("./services/voice/AudioDeviceManager.js");
+      const { getAudioDevices } = await import("./features/voice/AudioDeviceManager.js");
       const devices = await getAudioDevices();
       res.json(devices);
     } catch (err) {

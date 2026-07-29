@@ -7,11 +7,6 @@ import { exec } from "child_process";
  * Avoids browser-hashed device IDs by exposing direct system identifiers.
  */
 
-/**
- * Parses ALSA device output into structured device objects.
- * @param {string} text - ALSA list output
- * @returns {Array<{id: string, name: string}>}
- */
 function parseAlsaDevices(text) {
   const lines = text.split("\n");
   const devices = [];
@@ -22,10 +17,8 @@ function parseAlsaDevices(text) {
     if (!line) continue;
 
     if (line.startsWith("    ")) {
-      // Description line
       if (currentKey) {
         const description = line.trim();
-        // Exclude internal meta-devices like 'null' or snooping links
         if (
           currentKey !== "null" &&
           !currentKey.startsWith("sysdefault") &&
@@ -37,12 +30,10 @@ function parseAlsaDevices(text) {
         currentKey = null;
       }
     } else {
-      // Identifier key line
       currentKey = line.trim();
     }
   }
 
-  // Ensure default device is always present and first
   if (!devices.some(d => d.id === "default")) {
     devices.unshift({ id: "default", name: "System Default Device" });
   }
@@ -50,10 +41,6 @@ function parseAlsaDevices(text) {
   return devices;
 }
 
-/**
- * Retrieve ALSA audio input and output devices.
- * @returns {Promise<{inputs: Array<{id: string, name: string}>, outputs: Array<{id: string, name: string}>}>}
- */
 export function getAudioDevices() {
   return new Promise((resolve) => {
     exec("arecord -L", (err1, stdout1) => {

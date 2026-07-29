@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { spawn } from "child_process";
 import path from "path";
 import os from "os";
 import fs from "fs";
@@ -7,11 +7,12 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 const scriptPath = path.resolve(__dirname, "..", "..", "tts.py");
 const pythonPath = path.resolve(__dirname, "..", "..", "venv", "bin", "python");
 
 /**
- * Generate text-to-speech audio using edge-tts.
+ * Generate TTS audio using Edge-TTS.
  */
 export function generateTTS(text, options = {}) {
   return new Promise((resolve, reject) => {
@@ -22,50 +23,109 @@ export function generateTTS(text, options = {}) {
       speechVolume = "+0%"
     } = options;
 
-    const tempFile = path.join(os.tmpdir(), `samgpt-tts-${randomUUID()}.mp3`);
-    
-    const escapedText = text.replace(/"/g, '\\"');
+    const tempFile = path.join(
+      os.tmpdir(),
+      `samgpt-tts-${randomUUID()}.mp3`
+    );
 
-    const cmd = `"${pythonPath}" "${scriptPath}" --text "${escapedText}" --voice "${voiceSelection}" --rate "${speechSpeed}" --pitch "${speechPitch}" --volume "${speechVolume}" --output "${tempFile}"`;
-    
-    console.log(`[TTS] Generating audio via edge-tts...`);
+ const args = [
+  scriptPath,
+  "--text",
+  text,
+  "--voice",
+  voiceSelection,
+  `--rate=${speechSpeed}`,
+  `--pitch=${speechPitch}`,
+  `--volume=${speechVolume}`,
+  "--output",
+  tempFile
+];
 
-    exec(cmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error("[TTS] Edge-TTS generation failed:", err, stderr);
-        reject(err);
+    console.log("[TTS] Launching Edge-TTS...");
+    console.log("[TTS] Python:", pythonPath);
+    console.log("[TTS] Script:", scriptPath);
+    console.log("[TTS] Args:", args);
+
+    const child = spawn(pythonPath, args, {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    child.on("error", (err) => {
+      reject(err);
+    });
+
+    child.on("close", (code) => {
+      if (code !== 0) {
+        console.error("[TTS] Python exited with code:", code);
+        console.error("[TTS] stderr:", stderr);
+        console.error("[TTS] stdout:", stdout);
+
+        reject(
+          new Error(
+            `TTS failed (exit code ${code})\n${stderr || stdout}`
+          )
+        );
         return;
       }
-      
+
       if (!fs.existsSync(tempFile)) {
         reject(new Error("TTS output file was not created."));
         return;
       }
 
-      console.log(`[TTS] Audio successfully generated at: ${tempFile}`);
+      console.log("[TTS] Audio generated:", tempFile);
       resolve(tempFile);
     });
   });
 }
 
 /**
- * Backward-compatible speak function.
+ * Generate and immediately play speech.
  */
-export function speak(text) {
+export async function speak(text, options = {}) {
+  const tempFile = await generateTTS(text, options);
+
   return new Promise((resolve, reject) => {
-    generateTTS(text)
-      .then((tempFile) => {
-        const playCmd = `ffplay -nodisp -autoexit "${tempFile}"`;
-        exec(playCmd, (err) => {
-          fs.unlink(tempFile, () => {});
-          
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-      })
-      .catch(reject);
+    console.log("[TTS] Playing:", tempFile);
+
+    const player = spawn(
+      "ffplay",
+      [
+        "-nodisp",
+        "-autoexit",
+        "-loglevel",
+        "error",
+        tempFile
+      ],
+      {
+        stdio: "ignore"
+      }
+    );
+
+    player.on("error", (err) => {
+      fs.unlink(tempFile, () => {});
+      reject(err);
+    });
+
+    player.on("close", (code) => {
+      fs.unlink(tempFile, () => {});
+
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`ffplay exited with code ${code}`));
+      }
+    });
   });
 }
