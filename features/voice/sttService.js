@@ -1,115 +1,56 @@
 import recorder from "node-record-lpcm16";
 import fs from "fs";
-import { spawn } from "child_process";
 import path from "path";
 import os from "os";
 import { randomUUID } from "crypto";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const scriptPath = path.resolve(__dirname, "..", "..", "speech_to_text.py");
-const pythonPath = path.resolve(__dirname, "..", "..", "venv", "bin", "python");
-
-let whisperDaemon = null;
-let currentResolve = null;
-let daemonInitPromise = null;
+import { VOICE_CONFIG } from "./voiceConfig.js";
+import { VadDetector } from "./VadDetector.js";
+import { whisperDaemonManager } from "./WhisperDaemon.js";
 
 /**
  * Initialize the Whisper Python daemon.
+ * Public API wrapper preserving module contract.
  */
 export function initSTT() {
-  if (whisperDaemon) return daemonInitPromise;
-
-  daemonInitPromise = new Promise((resolve) => {
-    console.log("[STT] Starting Whisper Daemon...");
-    
-    whisperDaemon = spawn(pythonPath, [scriptPath], {
-      cwd: path.dirname(scriptPath)
-    });
-
-    whisperDaemon.stdout.on("data", (data) => {
-      const raw = data.toString().trim();
-      if (raw === "READY") {
-        console.log("[STT] Whisper Daemon loaded and READY.");
-        resolve(true);
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(raw);
-        if (currentResolve) {
-          currentResolve(parsed);
-          currentResolve = null;
-        }
-      } catch (e) {
-        console.error("[STT] Error parsing Whisper output:", raw, e);
-        if (currentResolve) {
-          currentResolve({ text: "", error: raw });
-          currentResolve = null;
-        }
-      }
-    });
-
-    whisperDaemon.stderr.on("data", (data) => {
-      const msg = data.toString().trim();
-      console.warn("[STT Daemon Debug/Error]:", msg);
-    });
-
-    whisperDaemon.on("close", (code) => {
-      console.log(`[STT] Whisper Daemon process exited with code ${code}`);
-      whisperDaemon = null;
-      daemonInitPromise = null;
-    });
-
-    whisperDaemon.on("error", (err) => {
-      console.error("[STT] Whisper Daemon process error:", err);
-      whisperDaemon = null;
-      daemonInitPromise = null;
-      resolve(false);
-    });
-  });
-
-  return daemonInitPromise;
+  return whisperDaemonManager.init();
 }
 
 /**
  * Shutdown the Whisper Daemon.
+ * Public API wrapper preserving module contract.
  */
 export function shutdownSTT() {
-  if (whisperDaemon) {
-    whisperDaemon.stdin.end();
-    whisperDaemon.kill("SIGTERM");
-    whisperDaemon = null;
-    daemonInitPromise = null;
-    console.log("[STT] Whisper Daemon terminated.");
-  }
+  whisperDaemonManager.shutdown();
 }
 
 /**
- * Record audio and transcribe it.
- * @param {object} options
- * @param {string} options.language - "en", "auto", or other ISO code
- * @param {number} options.silenceTimeout - duration of silence in seconds to trigger auto stop
- * @param {number} options.maxRecordingTime - max duration of recording in seconds
- * @param {number} options.noiseTolerance - amplitude RMS threshold for speech detection
- * @param {number} options.noSpeechTimeout - duration of silence before speech start to timeout
- * @param {string} options.device - input device identifier
- * @param {number} options.beamSize - Whisper beam search size (default 5 for accuracy)
+ * Record audio from the microphone and transcribe it via Whisper.
+ *
+ * Uses VadDetector for real-time Voice Activity Detection and silence timeout detection.
+ * Delegates transcription to WhisperDaemonManager.
+ *
+ * @param {object} [options]
+ * @param {string} [options.language="en"] - ISO language code
+ * @param {number} [options.silenceTimeout=1.2] - Duration of silence in seconds to auto-stop recording
+ * @param {number} [options.maxRecordingTime=15] - Maximum recording duration limit in seconds
+ * @param {number} [options.noiseTolerance=300] - Base RMS amplitude threshold for speech detection
+ * @param {number} [options.noSpeechTimeout=5.0] - Timeout in seconds if no speech is detected at start
+ * @param {string} [options.device="default"] - Microphone input device identifier
+ * @param {number} [options.beamSize=5] - Whisper beam search size
  * @returns {Promise<{text: string, detected_language?: string, language_probability?: number, confidence?: number, duration?: number, error?: string}>}
  */
 export async function listen(options = {}) {
-  // Ensure the Whisper model is loaded and daemon is ready
+  // Ensure the Whisper daemon is initialized and ready
   await initSTT();
 
   const {
-    language = "en",
-    silenceTimeout = 1.2,
-    maxRecordingTime = 15,
-    noiseTolerance = 300,
-    noSpeechTimeout = 5.0,
+    language = VOICE_CONFIG.STT.language,
+    silenceTimeout = VOICE_CONFIG.STT.silenceTimeout,
+    maxRecordingTime = VOICE_CONFIG.STT.maxRecordingTime,
+    noiseTolerance = VOICE_CONFIG.STT.noiseTolerance,
+    noSpeechTimeout = VOICE_CONFIG.STT.noSpeechTimeout,
     device = "default",
-    beamSize = 5
+    beamSize = VOICE_CONFIG.STT.beamSize
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -118,9 +59,9 @@ export async function listen(options = {}) {
 
     const recOptions = {
       recorder: os.platform() === "linux" ? "arecord" : "sox",
-      sampleRate: 16000,
-      channels: 1,
-      audioType: "wav",
+      sampleRate: VOICE_CONFIG.STT.sampleRate,
+      channels: VOICE_CONFIG.STT.channels,
+      audioType: VOICE_CONFIG.STT.audioType,
       verbose: false
     };
 
@@ -144,25 +85,17 @@ export async function listen(options = {}) {
     const recStream = recording.stream();
     recStream.pipe(fileStream);
 
+    const vad = new VadDetector({ noiseTolerance, silenceTimeout, noSpeechTimeout });
     let maxTimeTimeout = null;
     let finished = false;
     let isStopping = false;
-    let voiceActive = false;
-    let silenceDuration = 0;
-    let totalDuration = 0;
-    let totalBytesStreamed = 0;
-    let consecutiveSpeechChunks = 0;
-    let maxRmsObserved = 0;
-    let ambientNoiseSum = 0;
-    let ambientNoiseChunks = 0;
-    let ambientLocked = false;
 
     const cleanupAndResolve = () => {
       if (finished) return;
       finished = true;
       isStopping = true;
 
-      console.log(`[STT] Stopping recording. Total duration: ${totalDuration.toFixed(2)}s, Peak RMS: ${maxRmsObserved.toFixed(1)}, VoiceActive: ${voiceActive}`);
+      console.log(`[STT] Stopping recording. Total duration: ${vad.totalDuration.toFixed(2)}s, Peak RMS: ${vad.maxRmsObserved.toFixed(1)}, VoiceActive: ${vad.voiceActive}`);
 
       if (maxTimeTimeout) {
         clearTimeout(maxTimeTimeout);
@@ -180,7 +113,7 @@ export async function listen(options = {}) {
 
       fileStream.end();
 
-      setTimeout(() => {
+      setTimeout(async () => {
         if (!fs.existsSync(tempFile)) {
           resolve({ text: "", error: "Audio file not created" });
           return;
@@ -189,30 +122,24 @@ export async function listen(options = {}) {
         const stats = fs.statSync(tempFile);
         console.log(`[STT] Audio file saved: ${tempFile} (${stats.size} bytes)`);
 
-        if (stats.size <= 44 + 4000) {
+        if (stats.size <= VOICE_CONFIG.STT.minValidAudioBytes) {
           console.log("[STT VAD] Insufficient or empty audio recorded, skipping Whisper transcription.");
           fs.unlink(tempFile, () => {});
           resolve({ text: "", confidence: 1.0, duration: 0.0 });
           return;
         }
 
-        if (!voiceActive) {
+        if (!vad.voiceActive) {
           console.log("[STT VAD] No speech activity detected during session, skipping Whisper.");
           fs.unlink(tempFile, () => {});
           resolve({ text: "", confidence: 1.0, duration: 0.0 });
           return;
         }
 
-        if (!whisperDaemon) {
-          console.error("[STT] Whisper daemon is not running.");
-          fs.unlink(tempFile, () => {});
-          resolve({ text: "", error: "Whisper daemon not running" });
-          return;
-        }
-
-        currentResolve = (res) => {
-          if (res.text) {
-            console.log(`[STT Transcription Success] "${res.text}" (Lang: ${res.detected_language}, Prob: ${res.language_probability?.toFixed(2)}, Conf: ${res.confidence?.toFixed(2)}, Processing: ${res.processing_duration?.toFixed(2)}s)`);
+        try {
+          const result = await whisperDaemonManager.transcribe(tempFile, { language, beamSize });
+          if (result.text) {
+            console.log(`[STT Transcription Success] "${result.text}" (Lang: ${result.detected_language}, Prob: ${result.language_probability?.toFixed(2)}, Conf: ${result.confidence?.toFixed(2)}, Processing: ${result.processing_duration?.toFixed(2)}s)`);
           } else {
             console.log("[STT Transcription] No text transcribed or rejected by quality filter.");
           }
@@ -220,92 +147,43 @@ export async function listen(options = {}) {
           fs.unlink(tempFile, (err) => {
             if (err) console.warn("[STT] Temp file cleanup warning:", err.message);
           });
-          resolve(res);
-        };
-
-        const config = { 
-          audio_file: tempFile, 
-          language, 
-          beam_size: beamSize 
-        };
-        
-        console.log(`[STT] Sending file to Whisper Daemon (BeamSize: ${beamSize}, Lang: ${language})...`);
-        whisperDaemon.stdin.write(JSON.stringify(config) + "\n");
-      }, 80);
+          resolve(result);
+        } catch (err) {
+          console.error("[STT] Whisper transcription failed:", err.message);
+          fs.unlink(tempFile, () => {});
+          resolve({ text: "", error: err.message });
+        }
+      }, VOICE_CONFIG.TIMEOUTS.tempFileCleanupDelay);
     };
 
-    // Voice Activity Detection (VAD) with WAV header handling, noise locking & per-chunk logging
+    // Voice Activity Detection (VAD) audio stream handler
     recStream.on("data", (chunk) => {
-      // Check if this initial chunk is the 44-byte RIFF header emitted by node-record-lpcm16
-      if (totalBytesStreamed === 0 && chunk.length === 44 && chunk.toString("utf-8", 0, 4) === "RIFF") {
-        totalBytesStreamed += 44;
+      const vadResult = vad.processChunk(chunk);
+
+      if (vadResult.isHeader) {
         console.log("[STT VAD] WAV header chunk received (44 bytes). Skipped from RMS calculation.");
         return;
       }
-      totalBytesStreamed += chunk.length;
 
-      let sumSquares = 0;
-      let count = 0;
-
-      for (let i = 0; i < chunk.length; i += 2) {
-        if (i + 1 < chunk.length) {
-          const sample = chunk.readInt16LE(i);
-          sumSquares += sample * sample;
-          count++;
-        }
+      if (vadResult.speechDetected) {
+        console.log(`[STT VAD] Speech detected (RMS: ${vadResult.rms.toFixed(1)} > Threshold: ${vadResult.dynamicThreshold.toFixed(1)} at t=${vadResult.totalDuration.toFixed(2)}s)`);
       }
 
-      if (count > 0) {
-        const rms = Math.sqrt(sumSquares / count);
-        if (rms > maxRmsObserved) {
-          maxRmsObserved = rms;
-        }
+      if (vadResult.endOfSpeech) {
+        console.log(`[STT VAD] End of speech detected (Silence: ${vadResult.silenceDuration.toFixed(2)}s >= ${silenceTimeout}s). Stopping recording.`);
+        cleanupAndResolve();
+        return;
+      }
 
-        const chunkDuration = chunk.length / 32000;
-        totalDuration += chunkDuration;
+      if (vadResult.noSpeechTimeout) {
+        console.log(`[STT VAD] No speech detected within ${noSpeechTimeout}s timeout. Stopping.`);
+        cleanupAndResolve();
+        return;
+      }
 
-        // Freeze ambient noise learning immediately if speech or loud audio (RMS >= noiseTolerance) is detected
-        if (rms >= noiseTolerance || voiceActive) {
-          ambientLocked = true;
-        }
-
-        // Accumulate ambient noise floor ONLY during initial quiet silence before speech
-        if (!voiceActive && !ambientLocked && rms < noiseTolerance && ambientNoiseChunks < 10) {
-          ambientNoiseSum += rms;
-          ambientNoiseChunks++;
-        }
-
-        const ambientFloor = ambientNoiseChunks > 0 ? (ambientNoiseSum / ambientNoiseChunks) : 100;
-        // Clamp adaptive threshold to safe production range [noiseTolerance (300), 600]
-        const dynamicThreshold = Math.min(Math.max(noiseTolerance, ambientFloor * 1.5), 600);
-
-        const isSpeech = rms > dynamicThreshold;
-
-        if (isSpeech) {
-          consecutiveSpeechChunks++;
-          if (!voiceActive) {
-            console.log(`[STT VAD] Speech detected (RMS: ${rms.toFixed(1)} > Threshold: ${dynamicThreshold.toFixed(1)} at t=${totalDuration.toFixed(2)}s)`);
-            voiceActive = true;
-          }
-          silenceDuration = 0;
-        } else {
-          consecutiveSpeechChunks = 0;
-          if (voiceActive) {
-            silenceDuration += chunkDuration;
-            if (silenceDuration >= silenceTimeout) {
-              console.log(`[STT VAD] End of speech detected (Silence: ${silenceDuration.toFixed(2)}s >= ${silenceTimeout}s). Stopping recording.`);
-              cleanupAndResolve();
-            }
-          } else {
-            if (totalDuration >= noSpeechTimeout) {
-              console.log(`[STT VAD] No speech detected within ${noSpeechTimeout}s timeout. Stopping.`);
-              cleanupAndResolve();
-            }
-          }
-        }
-
-        // Per-chunk diagnostic logging
-        console.log(`[VAD Chunk] RMS: ${rms.toFixed(1)}, ambientFloor: ${ambientFloor.toFixed(1)}, dynamicThreshold: ${dynamicThreshold.toFixed(1)}, isSpeech: ${isSpeech}, speechChunkCount: ${consecutiveSpeechChunks}, voiceActive: ${voiceActive}, silenceDuration: ${silenceDuration.toFixed(2)}s, totalDuration: ${totalDuration.toFixed(2)}s`);
+      // Per-chunk diagnostic logging
+      if (vadResult.count > 0 || vadResult.rms !== undefined) {
+        console.log(`[VAD Chunk] RMS: ${vadResult.rms.toFixed(1)}, ambientFloor: ${vadResult.ambientFloor.toFixed(1)}, dynamicThreshold: ${vadResult.dynamicThreshold.toFixed(1)}, isSpeech: ${vadResult.isSpeech}, speechChunkCount: ${vadResult.speechChunkCount}, voiceActive: ${vadResult.voiceActive}, silenceDuration: ${vadResult.silenceDuration.toFixed(2)}s, totalDuration: ${vadResult.totalDuration.toFixed(2)}s`);
       }
     });
 

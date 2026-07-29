@@ -7,6 +7,7 @@ import { ollamaProvider } from "./providers/ollamaProvider.js";
 
 import { resolveModel, getModel } from "./modelRegistry.js";
 import { SYSTEM_PROMPT } from "./systemPrompt.js";
+import { VOICE_SYSTEM_PROMPT } from "../features/voice/voiceSystemPrompt.js";
 import { cleanResponse } from "./responseCleaner.js";
 import { decideModel } from "./modelRouter.js";
 import { loadSettings } from "../features/settings/index.js";
@@ -265,6 +266,7 @@ function compressCieResult(cieResult, provider, userPrompt, systemPrompt, pdfCon
  * @param {object} params.provider
  * @param {string} params.modelId
  * @param {string} params.systemPrompt
+ * @param {string} [params.systemPromptOverride] - Optional override (e.g. VOICE_SYSTEM_PROMPT). When set, takes precedence over systemPrompt.
  * @param {string} params.pdfContext
  * @param {object} params.settings
  * @returns {Promise<{response, cieResult, retryCount, compressionApplied}>}
@@ -275,10 +277,14 @@ export async function executeWithCie({
   provider,
   modelId,
   systemPrompt,
+  systemPromptOverride,
   pdfContext,
   settings
 }) {
-  let cieResult = await runCiePipeline(prompt, tool, provider, systemPrompt, pdfContext, settings);
+  // Voice Mode injects VOICE_SYSTEM_PROMPT via systemPromptOverride.
+  // All other callers continue using the standard SYSTEM_PROMPT.
+  const effectiveSystemPrompt = systemPromptOverride || systemPrompt;
+  let cieResult = await runCiePipeline(prompt, tool, provider, effectiveSystemPrompt, pdfContext, settings);
   let retryCount = 0;
   const maxRetries = provider.maxRetries ?? 3;
   let compressionApplied = false;
@@ -294,7 +300,7 @@ export async function executeWithCie({
     const startTime = Date.now();
     try {
       response = await provider.generate(modelId, cieResult.promptText, {
-        systemPrompt,
+        systemPrompt: effectiveSystemPrompt,
         temperature: settings.temperature,
         maxTokens: settings.maxTokens
       });
@@ -636,11 +642,18 @@ export async function askGroqStream(prompt) {
 // ─────────────────────────────────────────────────────────────────────────────
 // askAI
 // Main non-streaming AI entry point. Powered by Context Intelligence Engine.
+// Voice Mode passes tool="voice" to inject the Voice system prompt.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function askAI(prompt, tool = "chat") {
   const settings = await loadSettings();
   const overrides = settings.capabilityRoutes || {};
   let modelConfig;
+
+  // Resolve which system prompt to use.
+  // Voice Mode gets a spoken-first, Markdown-free persona prompt.
+  // All other tools continue using the standard Chat system prompt.
+  const isVoiceMode = tool === "voice";
+  const activeSystemPrompt = isVoiceMode ? VOICE_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
   if (settings.model && settings.model !== "auto") {
     modelConfig = resolveModel(settings.model.toLowerCase());
@@ -667,6 +680,7 @@ export async function askAI(prompt, tool = "chat") {
       provider,
       modelId: modelConfig.modelId,
       systemPrompt: SYSTEM_PROMPT,
+      systemPromptOverride: isVoiceMode ? VOICE_SYSTEM_PROMPT : undefined,
       pdfContext: "",
       settings
     });
@@ -708,6 +722,7 @@ export async function askAI(prompt, tool = "chat") {
           provider: fallbackProvider,
           modelId: finalModelConfig.modelId,
           systemPrompt: SYSTEM_PROMPT,
+          systemPromptOverride: isVoiceMode ? VOICE_SYSTEM_PROMPT : undefined,
           pdfContext: "",
           settings
         });

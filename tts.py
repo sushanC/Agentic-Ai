@@ -31,9 +31,34 @@ async def main():
         print("Error: No text provided to speak.")
         sys.exit(1)
 
-    # Pronunciation fixes (keep existing)
-    text = text.replace("Sushan", "Soo-shan")
-    text = text.replace("Achar", "Ah-char")
+    # Pronunciation dictionary — fixes common Edge-TTS mispronunciations
+    # Applied after sanitization, before synthesis.
+    pronunciation_fixes = [
+        # Proper names
+        ("Sushan", "Soo-shan"),
+        ("Achar", "Ah-char"),
+        # Technical terms that TTS often mispronounces as single words
+        ("GitHub", "Git Hub"),
+        ("GitLab", "Git Lab"),
+        ("DevOps", "Dev Ops"),
+        ("PostgreSQL", "Postgres Q L"),
+        ("MongoDB", "Mongo D B"),
+        ("ChatGPT", "Chat G P T"),
+        ("OpenAI", "Open A I"),
+        ("samGPT", "Sam G P T"),
+        # Units that should be spelled out when standalone
+        ("px", "pixels"),
+        ("ms", "milliseconds"),
+        # Avoid reading symbols as punctuation
+        ("->", "arrow"),
+        ("=>", "arrow"),
+        ("!=", "not equal to"),
+        (">=", "greater than or equal to"),
+        ("<=", "less than or equal to"),
+        ("==", "equal to"),
+    ]
+    for original, spoken in pronunciation_fixes:
+        text = text.replace(original, spoken)
 
     communicate = edge_tts.Communicate(
         text=text,

@@ -8,23 +8,41 @@ import { updateMemory } from "../memory/index.js";
 import { updateSummary } from "../../services/summaryService.js";
 import { incrementStat } from "../../storage/statsStorage.js";
 import { loadSettings } from "../settings/index.js";
-import { emitDevEvent, beginRequest, endRequest } from "../../services/developerBridge.js";
+import { beginRequest, endRequest } from "../../services/developerBridge.js";
 import { perfMonitor } from "./VoicePerformanceMonitor.js";
 import { voiceMetrics } from "./VoicePerformanceMetrics.js";
-import { shouldExtractMemory, isShortcutQuery, getVoiceCieOptions } from "./VoiceLatencyOptimizer.js";
+import { shouldExtractMemory } from "./VoiceLatencyOptimizer.js";
 import { VoicePipelineOptimizer } from "./VoicePipelineOptimizer.js";
+import { VOICE_CONFIG } from "./voiceConfig.js";
+import { voiceEvents } from "./VoiceEventEmitter.js";
+import { voiceResponseProcessor } from "./VoiceResponseProcessor.js";
 
 /**
  * VoiceManager.js
  *
- * Coordinates the full-duplex Jarvis Voice Pipeline.
- * Handles timings, VAD configs, MSE tool routing, and OS audio playback.
+ * High-level orchestrator for the Jarvis Voice Pipeline.
+ * Coordinates listening (STT), AI routing, response sanitization/preprocessing,
+ * speech synthesis (TTS), and audio playback queueing.
+ *
+ * Delegates event emission to VoiceEventEmitter, response processing to VoiceResponseProcessor,
+ * and configuration defaults to voiceConfig.
  */
 class VoiceManager {
-  constructor() {
-    this.stateMachine = new VoiceStateMachine((state, oldState) => this._onStateChange(state, oldState));
-    this.queue = new VoiceQueue();
+  /**
+   * @param {object} [deps] - Injected dependencies
+   * @param {VoiceStateMachine} [deps.stateMachine]
+   * @param {VoiceQueue} [deps.queue]
+   * @param {VoiceEventEmitter} [deps.events]
+   * @param {VoiceResponseProcessor} [deps.responseProcessor]
+   */
+  constructor(deps = {}) {
+    this.events = deps.events || voiceEvents;
+    this.responseProcessor = deps.responseProcessor || voiceResponseProcessor;
+
+    this.stateMachine = deps.stateMachine || new VoiceStateMachine((state, oldState) => this._onStateChange(state, oldState));
+    this.queue = deps.queue || new VoiceQueue();
     this.pipelineOptimizer = new VoicePipelineOptimizer(this.queue);
+
     this.settings = null;
     this.isActive = false;
     this.conversationTimer = null;
@@ -32,8 +50,8 @@ class VoiceManager {
     this.currentReply = null;
     this.playbackActive = false;
 
-    // Bind queue callbacks
-    this.queue.onPlayStart = (file) => {
+    // Bind playback queue event listeners
+    this.queue.onPlayStart = () => {
       perfMonitor.end("playbackStartup");
       voiceMetrics.end("playbackStartup");
       if (!this.playbackActive) {
@@ -99,10 +117,10 @@ class VoiceManager {
     await this.init();
     this.isActive = true;
     console.log("[VoiceManager] Jarvis Voice Assistant activated.");
-    emitDevEvent("VoiceStarted", { msg: "Jarvis voice assistant active" });
+    this.events.emitVoiceStarted();
 
     if (this.settings?.conversationMode) {
-      emitDevEvent("ConversationStarted", { msg: "Continuous conversation started" });
+      this.events.emitConversationStarted();
     }
 
     this.startListening();
@@ -117,10 +135,10 @@ class VoiceManager {
     this._clearConversationTimer();
     this.stateMachine.transitionTo("idle");
     console.log("[VoiceManager] Jarvis Voice Assistant deactivated.");
-    emitDevEvent("VoiceStopped", { reason: "User manual deactivate" });
+    this.events.emitVoiceStopped("User manual deactivate");
 
     if (this.settings?.conversationMode) {
-      emitDevEvent("ConversationEnded", { reason: "User deactivated voice mode" });
+      this.events.emitConversationEnded("User deactivated voice mode");
     }
   }
 
@@ -130,11 +148,11 @@ class VoiceManager {
   async startListening() {
     await this.init();
 
-    // Interruption check: If speaking, stop it
+    // Interruption check: If speaking, cancel active playback
     if (this.stateMachine.state === "speaking") {
       console.log("[VoiceManager] Interruption: New request started while speaking. Stopping playback.");
       this.queue.cancel();
-      emitDevEvent("PlaybackCancelled", { reason: "User interrupted with new request" });
+      this.events.emitPlaybackCancelled("User interrupted with new request");
     }
 
     if (!this.stateMachine.transitionTo("listening")) {
@@ -145,51 +163,48 @@ class VoiceManager {
     this.currentText = null;
     this.currentReply = null;
 
-    // Start tracking lifecycle timings
+    // Start tracking session lifecycle timings
     const sessionId = `voice-${Date.now()}`;
     perfMonitor.startSession(sessionId);
 
-    // Begin logical request context for timings & logs
+    // Begin logical request context
     beginRequest();
+    this.events.emitListeningStarted();
 
-    emitDevEvent("ListeningStarted", { timestamp: new Date().toISOString() });
-
-    // Handle Conversation Mode timeout trigger
+    // Handle Conversation Mode timeout timer
     this._startConversationTimer();
 
     try {
       console.log("[VoiceManager] Calling listen()");
-      
+
       perfMonitor.start("recording");
       const result = await listen({
-        language: this.settings?.language || "en",
-        silenceTimeout: this.settings?.silenceTimeout || 2.0,
-        maxRecordingTime: this.settings?.maxRecordingTime || 15,
-        noiseTolerance: this.settings?.noiseTolerance || 300,
-        noSpeechTimeout: this.settings?.noSpeechTimeout || 5.0,
+        language: this.settings?.language || VOICE_CONFIG.STT.language,
+        silenceTimeout: this.settings?.silenceTimeout || VOICE_CONFIG.STT.silenceTimeout,
+        maxRecordingTime: this.settings?.maxRecordingTime || VOICE_CONFIG.STT.maxRecordingTime,
+        noiseTolerance: this.settings?.noiseTolerance || VOICE_CONFIG.STT.noiseTolerance,
+        noSpeechTimeout: this.settings?.noSpeechTimeout || VOICE_CONFIG.STT.noSpeechTimeout,
         device: this.settings?.microphoneSelection || "default"
       });
       perfMonitor.end("recording");
 
       console.log("[VoiceManager] Listen returned:", result);
-
       this._clearConversationTimer();
 
       if (result.error) {
         console.error("[VoiceManager] Speech recognition failed:", result.error);
-        emitDevEvent("SpeechRecognitionFailed", { error: result.error });
+        this.events.emitSpeechRecognitionFailed(result.error);
         this.stateMachine.transitionTo("error");
         return;
       }
 
       const text = result.text ? result.text.trim() : "";
       this.currentText = text;
-
-      emitDevEvent("SpeechRecognized", { text });
+      this.events.emitSpeechRecognized(text);
 
       if (!text) {
         console.log("[VoiceManager] No speech detected.");
-        emitDevEvent("SpeechRecognitionFailed", { error: "No speech detected" });
+        this.events.emitSpeechRecognitionFailed("No speech detected");
 
         if (this.isActive && this.settings?.conversationMode) {
           console.log("[VoiceManager] Continuous conversation active. Retrying listening...");
@@ -202,7 +217,7 @@ class VoiceManager {
 
       console.log(`[VoiceManager] Recognized Speech: "${text}"`);
 
-      // Set physical ALSA speaker selection in queue dynamically
+      // Set physical ALSA speaker output device in queue dynamically
       if (this.settings?.speakerSelection) {
         this.queue.setSpeaker(this.settings.speakerSelection);
       }
@@ -211,7 +226,7 @@ class VoiceManager {
 
     } catch (err) {
       console.error("[VoiceManager] Listening failed:", err);
-      emitDevEvent("SpeechRecognitionFailed", { error: err.message });
+      this.events.emitSpeechRecognitionFailed(err.message);
       this.stateMachine.transitionTo("error");
     }
   }
@@ -223,7 +238,7 @@ class VoiceManager {
     console.log("[VoiceManager] Cancelling listening session.");
     this._clearConversationTimer();
     this.stateMachine.transitionTo("idle");
-    emitDevEvent("VoiceStopped", { reason: "User cancelled listening" });
+    this.events.emitVoiceStopped("User cancelled listening");
   }
 
   /**
@@ -233,12 +248,12 @@ class VoiceManager {
     console.log("[VoiceManager] Stopping playback.");
     this.queue.cancel();
     this.stateMachine.transitionTo("idle");
-    emitDevEvent("PlaybackCancelled", { reason: "User stopped playback" });
+    this.events.emitPlaybackCancelled("User stopped playback");
   }
 
   /**
-   * Send the transcribed user request to the AI routing pipeline.
-   * @param {string} text
+   * Send transcribed user request through the AI routing pipeline.
+   * @param {string} text - Transcribed user input
    */
   async processRequest(text) {
     if (!this.stateMachine.transitionTo("processing")) {
@@ -248,13 +263,12 @@ class VoiceManager {
     perfMonitor.start("aiPipeline");
     voiceMetrics.start("cie");
     voiceMetrics.setMetadata("text", text);
-    emitDevEvent("AIStarted", { prompt: text });
+    this.events.emitAIStarted(text);
 
     try {
       // Core AI pipeline integration (CIE -> Tool Router -> MSE -> Model)
       await addMessage("user", text);
 
-      // Memory Optimization: Skip memory extraction for greetings, small talk, and control shortcuts
       if (shouldExtractMemory(text)) {
         await updateMemory(text);
       } else {
@@ -278,18 +292,16 @@ class VoiceManager {
       await incrementStat("messages");
 
       perfMonitor.end("aiPipeline");
-      emitDevEvent("AIFinished", {
-        latencyMs: perfMonitor.getMetrics().aiPipeline || 0,
-        reply
-      });
+      this.events.emitAIFinished(perfMonitor.getMetrics().aiPipeline || 0, reply);
 
       this.currentReply = reply;
       voiceMetrics.setMetadata("reply", reply);
 
-      // Clean markdown tags or symbols for TTS
-      const cleanReply = reply.replace(/\*\*|__/g, "").replace(/`/g, "");
+      // Process raw AI reply into clean, TTS-preprocessed speech
+      const cleanReply = this.responseProcessor.process(reply);
+      console.log("[VoiceManager] Sanitized reply for TTS:", cleanReply.slice(0, 120));
 
-      // Proceed to Speak transition
+      // Transition to speaking and synthesize speech
       this.stateMachine.transitionTo("speaking");
       await this.synthesizeAndSpeak(cleanReply);
 
@@ -301,38 +313,35 @@ class VoiceManager {
 
   /**
    * Synthesize AI answer using TTS and queue it.
-   * @param {string} replyText
+   * @param {string} replyText - Clean, speech-friendly text
    */
   async synthesizeAndSpeak(replyText) {
     perfMonitor.start("tts");
     voiceMetrics.start("tts");
     perfMonitor.start("playbackStartup");
     voiceMetrics.start("playbackStartup");
-    emitDevEvent("TTSStarted", { text: replyText });
+    this.events.emitTTSStarted(replyText);
 
     try {
-      // Split reply into sentences to start speaking low-latency (first sentence first)
-      const sentences = replyText.match(/[^.!?]+[.!?]+(\s|$)/g) || [replyText];
+      // Split preprocessed text into sentence chunks for low-latency playback
+      const chunks = this.responseProcessor.split(replyText);
 
-      for (const sentence of sentences) {
+      for (const sentence of chunks) {
         const trimmed = sentence.trim();
         if (!trimmed) continue;
 
         const audioFile = await generateTTS(trimmed, {
-          voiceSelection: this.settings?.voiceSelection || "en-IN-NeerjaNeural",
-          speechSpeed: this.settings?.speechSpeed || "+0%",
-          speechPitch: this.settings?.speechPitch || "+0Hz",
-          speechVolume: this.settings?.speechVolume || "+0%"
+          voiceSelection: this.settings?.voiceSelection || VOICE_CONFIG.TTS.voiceSelection,
+          speechSpeed: this.settings?.speechSpeed || VOICE_CONFIG.TTS.speechSpeed,
+          speechPitch: this.settings?.speechPitch || VOICE_CONFIG.TTS.speechPitch,
+          speechVolume: this.settings?.speechVolume || VOICE_CONFIG.TTS.speechVolume
         });
         this.queue.enqueue(audioFile);
       }
 
       perfMonitor.end("tts");
       voiceMetrics.end("tts");
-      emitDevEvent("TTSFinished", {
-        latencyMs: perfMonitor.getMetrics().tts || 0,
-        characters: replyText.length
-      });
+      this.events.emitTTSFinished(perfMonitor.getMetrics().tts || 0, replyText.length);
 
     } catch (err) {
       console.error("[VoiceManager] TTS synthesis failed:", err);
@@ -350,44 +359,19 @@ class VoiceManager {
     console.log("[VoiceManager] timings finalized:", metrics);
 
     voiceMetrics.emitToConsole();
-
-    emitDevEvent("FullRequestSummary", {
-      latencyMs: metrics.total || 0,
-      success: this.stateMachine.state !== "error",
-      payload: {
-        listeningLatency: metrics.recording || 0,
-        aiLatency: metrics.aiPipeline || 0,
-        ttsLatency: metrics.tts || 0,
-        playbackDuration: metrics.playback || 0,
-        totalDuration: metrics.total || 0,
-        playbackStartupLatency: metrics.playbackStartup || 0
-      }
-    });
-
-    // Finalize developer request log
+    this.events.emitFullRequestSummary(metrics, this.stateMachine.state !== "error");
     endRequest();
   }
 
   /**
-   * Handle state change by notifying Electron process.
+   * Handle state changes by notifying Electron main process via VoiceEventEmitter.
    * @private
    */
   _onStateChange(state, oldState) {
-    if (typeof process.send === "function") {
-      process.send({
-        type: "VOICE_STATE_CHANGE",
-        payload: {
-          state,
-          oldState,
-          text: state === "processing" ? this.currentText : null,
-          reply: state === "speaking" ? this.currentReply : null
-        }
-      });
-    }
+    this.events.emitStateChange(state, oldState, this.currentText, this.currentReply);
 
     if (state === "error") {
-      // Recover to idle after a small delay
-      setTimeout(() => this.stateMachine.transitionTo("idle"), 3000);
+      setTimeout(() => this.stateMachine.transitionTo("idle"), VOICE_CONFIG.TIMEOUTS.errorRecoveryDelay);
     }
   }
 
@@ -400,11 +384,11 @@ class VoiceManager {
 
     if (!this.settings?.conversationMode) return;
 
-    const timeoutSec = this.settings?.conversationTimeout || 30;
+    const timeoutSec = this.settings?.conversationTimeout || VOICE_CONFIG.TIMEOUTS.conversationModeTimeout;
 
     this.conversationTimer = setTimeout(() => {
       console.log(`[VoiceManager] Conversation timed out after ${timeoutSec}s of silence.`);
-      emitDevEvent("ConversationEnded", { reason: "Silence timeout reached" });
+      this.events.emitConversationEnded("Silence timeout reached");
       this.stopVoiceMode();
     }, timeoutSec * 1000);
   }
@@ -421,5 +405,5 @@ class VoiceManager {
   }
 }
 
-// Export singleton instance
+// Export default singleton instance
 export const voiceManager = new VoiceManager();

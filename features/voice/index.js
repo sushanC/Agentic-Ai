@@ -13,6 +13,16 @@ export { VoicePipelineOptimizer } from "./VoicePipelineOptimizer.js";
 export { rankVoiceCandidates, shouldAllowOllama, isSimpleGreeting, VOICE_PRIORITY_ORDER } from "./VoiceRoutingProfile.js";
 export { shouldExtractMemory, isShortcutQuery, getVoiceCieOptions } from "./VoiceLatencyOptimizer.js";
 
+// Voice Architecture & Pipeline Modules
+export { VOICE_CONFIG } from "./voiceConfig.js";
+export { VadDetector } from "./VadDetector.js";
+export { WhisperDaemonManager, whisperDaemonManager } from "./WhisperDaemon.js";
+export { VoiceEventEmitter, voiceEvents } from "./VoiceEventEmitter.js";
+export { VoiceResponseProcessor, voiceResponseProcessor } from "./VoiceResponseProcessor.js";
+export { VOICE_SYSTEM_PROMPT } from "./voiceSystemPrompt.js";
+export { sanitizeForVoice, containsMarkdown } from "./voiceResponseSanitizer.js";
+export { preprocessForTTS, splitIntoSentences } from "./ttsSpeechPreprocessor.js";
+
 export * as voiceService from "./voiceService.js";
 export * as voiceController from "./voiceController.js";
 export * as sttService from "./sttService.js";

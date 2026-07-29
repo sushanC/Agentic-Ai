@@ -4,6 +4,7 @@ import os from "os";
 import fs from "fs";
 import { randomUUID } from "crypto";
 import { fileURLToPath } from "url";
+import { VOICE_CONFIG } from "./voiceConfig.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,14 +14,22 @@ const pythonPath = path.resolve(__dirname, "..", "..", "venv", "bin", "python");
 
 /**
  * Generate TTS audio using Edge-TTS.
+ *
+ * @param {string} text - Text to synthesize into speech
+ * @param {object} [options]
+ * @param {string} [options.voiceSelection] - Edge-TTS voice identifier
+ * @param {string} [options.speechSpeed] - Rate adjustment string (e.g. "+0%")
+ * @param {string} [options.speechPitch] - Pitch adjustment string (e.g. "+0Hz")
+ * @param {string} [options.speechVolume] - Volume adjustment string (e.g. "+0%")
+ * @returns {Promise<string>} Absolute filepath to the generated MP3 file
  */
 export function generateTTS(text, options = {}) {
   return new Promise((resolve, reject) => {
     const {
-      voiceSelection = "en-IN-NeerjaNeural",
-      speechSpeed = "+0%",
-      speechPitch = "+0Hz",
-      speechVolume = "+0%"
+      voiceSelection = VOICE_CONFIG.TTS.voiceSelection,
+      speechSpeed = VOICE_CONFIG.TTS.speechSpeed,
+      speechPitch = VOICE_CONFIG.TTS.speechPitch,
+      speechVolume = VOICE_CONFIG.TTS.speechVolume
     } = options;
 
     const tempFile = path.join(
@@ -28,18 +37,18 @@ export function generateTTS(text, options = {}) {
       `samgpt-tts-${randomUUID()}.mp3`
     );
 
- const args = [
-  scriptPath,
-  "--text",
-  text,
-  "--voice",
-  voiceSelection,
-  `--rate=${speechSpeed}`,
-  `--pitch=${speechPitch}`,
-  `--volume=${speechVolume}`,
-  "--output",
-  tempFile
-];
+    const args = [
+      scriptPath,
+      "--text",
+      text,
+      "--voice",
+      voiceSelection,
+      `--rate=${speechSpeed}`,
+      `--pitch=${speechPitch}`,
+      `--volume=${speechVolume}`,
+      "--output",
+      tempFile
+    ];
 
     console.log("[TTS] Launching Edge-TTS...");
     console.log("[TTS] Python:", pythonPath);
@@ -92,6 +101,10 @@ export function generateTTS(text, options = {}) {
 
 /**
  * Generate and immediately play speech.
+ *
+ * @param {string} text
+ * @param {object} [options]
+ * @returns {Promise<void>}
  */
 export async function speak(text, options = {}) {
   const tempFile = await generateTTS(text, options);
