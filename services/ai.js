@@ -18,6 +18,7 @@ import { runCiePipeline, buildPrompt } from "./cie/index.js";
 // Import new production-hardening modules
 import { evaluate as evaluateRetryPolicy, RetryAction, logPolicyDecision } from "./cie/RetryPolicyEngine.js";
 import { recordSuccess, recordFailure, getHealthScore, isAvailable as isProviderAvailable } from "./cie/ProviderHealthManager.js";
+import { runtimeManager } from "../core/runtime/RuntimeManager.js";
 
 // MSE Phase 6 — Per-model health tracking (parallel to provider health)
 import { recordModelSuccess, recordModelFailure } from "./modelSelection/index.js";
@@ -645,135 +646,11 @@ export async function askGroqStream(prompt) {
 // Voice Mode passes tool="voice" to inject the Voice system prompt.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function askAI(prompt, tool = "chat") {
-  const settings = await loadSettings();
-  const overrides = settings.capabilityRoutes || {};
-  let modelConfig;
-
-  // Resolve which system prompt to use.
-  // Voice Mode gets a spoken-first, Markdown-free persona prompt.
-  // All other tools continue using the standard Chat system prompt.
-  const isVoiceMode = tool === "voice";
-  const activeSystemPrompt = isVoiceMode ? VOICE_SYSTEM_PROMPT : SYSTEM_PROMPT;
-
-  if (settings.model && settings.model !== "auto") {
-    modelConfig = resolveModel(settings.model.toLowerCase());
-  } else {
-    // Phase 6: decideModel is now async — delegates to IntentDetector + MSE
-    modelConfig = await decideModel(prompt, tool, overrides, {}, settings);
+  const result = await runtimeManager.execute({ prompt, tool });
+  if (result.modelUsed) {
+    lastModelUsed = result.modelUsed;
   }
-
-  const provider = providers[modelConfig.provider];
-  let finalModelConfig = modelConfig;
-  lastModelUsed = finalModelConfig;
-  let fallbackOccurred = false;
-  let startTime = Date.now();
-  let response;
-  let finalCieResult;
-  let retryCount = 0;
-  let compressionApplied = false;
-  const fallbackChain = [modelConfig.provider];
-
-  try {
-    const result = await executeWithCie({
-      prompt,
-      tool,
-      provider,
-      modelId: modelConfig.modelId,
-      systemPrompt: SYSTEM_PROMPT,
-      systemPromptOverride: isVoiceMode ? VOICE_SYSTEM_PROMPT : undefined,
-      pdfContext: "",
-      settings
-    });
-    response = result.response;
-    finalCieResult = result.cieResult;
-    retryCount = result.retryCount;
-    compressionApplied = result.compressionApplied;
-    // Phase 6: record per-model success
-    const elapsed = Date.now() - startTime;
-    recordModelSuccess(modelConfig.name || modelConfig.key || modelConfig.provider, elapsed);
-  } catch (err) {
-    // Phase 6: record primary model failure
-    recordModelFailure(modelConfig.name || modelConfig.key || modelConfig.provider, err);
-
-    const fallbackList = modelConfig.fallbackChain || (modelConfig.fallback ? [modelConfig.fallback] : []);
-    let success = false;
-
-    for (const fallbackKey of fallbackList) {
-      const fallbackModel = resolveModel(fallbackKey);
-      if (!fallbackModel || !fallbackModel.enabled || fallbackModel.status === "disabled") {
-        continue;
-      }
-      if (!isProviderAvailable(fallbackModel.provider)) {
-        console.log(`⚠️ [Fallback] Model ${fallbackModel.displayName} skipped because provider ${fallbackModel.provider} is unhealthy.`);
-        continue;
-      }
-
-      fallbackOccurred = true;
-      finalModelConfig = fallbackModel;
-      lastModelUsed = finalModelConfig;
-      console.log(`\n🔄 Primary provider failed. Falling back to ${finalModelConfig.provider} (${finalModelConfig.modelId})...`);
-      fallbackChain.push(finalModelConfig.provider);
-
-      try {
-        const fallbackProvider = providers[finalModelConfig.provider];
-        const result = await executeWithCie({
-          prompt,
-          tool,
-          provider: fallbackProvider,
-          modelId: finalModelConfig.modelId,
-          systemPrompt: SYSTEM_PROMPT,
-          systemPromptOverride: isVoiceMode ? VOICE_SYSTEM_PROMPT : undefined,
-          pdfContext: "",
-          settings
-        });
-        response = result.response;
-        finalCieResult = result.cieResult;
-        retryCount = result.retryCount;
-        compressionApplied = result.compressionApplied;
-        const fallbackElapsed = Date.now() - startTime;
-        recordModelSuccess(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackElapsed);
-        success = true;
-        break;
-      } catch (fallbackErr) {
-        recordModelFailure(finalModelConfig.name || finalModelConfig.key || finalModelConfig.provider, fallbackErr);
-        console.error(`❌ Fallback to ${finalModelConfig.displayName} failed:`, fallbackErr.message);
-      }
-    }
-
-    if (!success) {
-      throw err;
-    }
-  }
-
-  let endTime = Date.now();
-  let latencyMs = endTime - startTime;
-
-  const finalProvider = providers[finalModelConfig.provider];
-  logCieUsage({
-    intent: finalCieResult.intent,
-    memoryKeys: finalCieResult.memoryKeys,
-    rawMemory: finalCieResult.rawMemory,
-    historyCount: finalCieResult.historyCount,
-    rawHistory: finalCieResult.rawHistory,
-    summaryLevel: finalCieResult.summaryLevel || "None",
-    summarySize: finalCieResult.summarySize,
-    rawSummary: finalCieResult.rawSummary,
-    estimatedTokens: finalCieResult.estimatedTokens,
-    compressionApplied,
-    finalPromptSize: finalCieResult.promptText.length,
-    providerName: finalModelConfig.provider,
-    modelDisplayName: finalModelConfig.displayName,
-    latencyMs,
-    fallbackOccurred,
-    retryCount,
-    provider: finalProvider,
-    maxBudget: finalCieResult.maxBudget,
-    tokenBreakdown: finalCieResult.tokenBreakdown || {},
-    healthScore: getHealthScore(finalModelConfig.provider),
-    fallbackChain,
-  });
-
-  return cleanResponse(response);
+  return result.answer;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
