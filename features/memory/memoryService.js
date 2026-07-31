@@ -1,35 +1,26 @@
-import {
-  loadMemory,
-  saveMemory,
-  deleteMemoryKey
-} from "./memoryStorage.js";
+import { memoryManager } from "./MemoryManager.js";
+import { normalizeMemory } from "./memoryNormalizer.js";
+import { incrementStat } from "../../storage/statsStorage.js";
 
-import {
-  extractMemory
-} from "../../services/ai.js";
+export async function loadMemory() {
+  return await memoryManager.getLegacyProfile();
+}
 
-import {
-  normalizeMemory
-} from "./memoryNormalizer.js";
+export async function saveMemory(memory) {
+  for (const [key, value] of Object.entries(memory)) {
+    await memoryManager.store({ content: { key, value } }, { storeName: "semantic" });
+  }
+}
 
-import {
-  incrementStat
-} from "../../storage/statsStorage.js";
-
-import {
-  saveProfile
-} from "../../storage/profileStorage.js";
-
-export { loadMemory, saveMemory, deleteMemoryKey };
+export async function deleteMemoryKey(key) {
+  await memoryManager.delete(key, "semantic");
+}
 
 export async function getMemoryFacts() {
   const memory = await loadMemory();
-
   return Object.entries(memory).map(([key, value]) => ({
     id: key,
-    text: Array.isArray(value)
-      ? value.join(", ")
-      : String(value),
+    text: Array.isArray(value) ? value.join(", ") : String(value),
     category: key
   }));
 }
@@ -37,60 +28,31 @@ export async function getMemoryFacts() {
 /**
  * Merge old memory with newly extracted facts.
  */
-export function mergeMemory(
-  oldMemory,
-  newFacts
-) {
+export function mergeMemory(oldMemory, newFacts) {
   const merged = { ...oldMemory };
 
   for (const key of Object.keys(newFacts)) {
     const oldValue = merged[key];
     const newValue = newFacts[key];
 
-    // Both arrays — union
-    if (
-      Array.isArray(oldValue) &&
-      Array.isArray(newValue)
-    ) {
-      merged[key] = [
-        ...new Set([...oldValue, ...newValue])
-      ];
+    if (Array.isArray(oldValue) && Array.isArray(newValue)) {
+      merged[key] = [...new Set([...oldValue, ...newValue])];
       continue;
     }
 
-    // Old is array, new is string — append
-    if (
-      Array.isArray(oldValue) &&
-      typeof newValue === "string"
-    ) {
-      merged[key] = [
-        ...new Set([...oldValue, newValue])
-      ];
+    if (Array.isArray(oldValue) && typeof newValue === "string") {
+      merged[key] = [...new Set([...oldValue, newValue])];
       continue;
     }
 
-    // Old is string, new is array — convert old and union
-    if (
-      typeof oldValue === "string" &&
-      Array.isArray(newValue)
-    ) {
-      merged[key] = [
-        ...new Set([oldValue, ...newValue])
-      ];
+    if (typeof oldValue === "string" && Array.isArray(newValue)) {
+      merged[key] = [...new Set([oldValue, ...newValue])];
       continue;
     }
 
-    // Both strings — keep if same, convert to array if different
-    if (
-      typeof oldValue === "string" &&
-      typeof newValue === "string"
-    ) {
-      if (oldValue === newValue) {
-        continue;
-      }
-      merged[key] = [
-        ...new Set([oldValue, newValue])
-      ];
+    if (typeof oldValue === "string" && typeof newValue === "string") {
+      if (oldValue === newValue) continue;
+      merged[key] = [...new Set([oldValue, newValue])];
       continue;
     }
 
@@ -100,112 +62,50 @@ export function mergeMemory(
   return merged;
 }
 
-export async function updateMemory(
-  userMessage
-) {
-  let facts = {};
-
-  try {
-    facts = await extractMemory(userMessage);
-  } catch (err) {
-    console.log(
-      "\n⚠️ Memory extraction skipped."
-    );
-    console.log(err.message);
-    return;
-  }
-
-  if (Object.keys(facts).length === 0) {
-    return;
-  }
-
-  const memory = await loadMemory();
-
-  const merged = mergeMemory(
-    memory,
-    facts
-  );
-
-  const cleaned = normalizeMemory(merged);
-
-  await saveMemory(cleaned);
-
-  // Track stat
+export async function updateMemory(userMessage) {
+  await memoryManager.update(userMessage);
   await incrementStat("memory_updates");
-
-  console.log("\n🧠 Memory Updated:");
-  console.log(cleaned);
 }
 
-export async function handleMemory(
-  userMessage,
-  profile
-) {
+export async function handleMemory(userMessage, profile) {
   // remember
-  if (
-    userMessage
-      .toLowerCase()
-      .startsWith("remember ")
-  ) {
-    const fact = userMessage.replace(
-      /^remember /i,
-      ""
-    );
-
+  if (userMessage.toLowerCase().startsWith("remember ")) {
+    const fact = userMessage.replace(/^remember /i, "");
     const parts = fact.split("=");
 
     if (parts.length !== 2) {
-      console.log(
-        "\nUsage:\nremember key = value\n"
-      );
+      console.log("\nUsage:\nremember key = value\n");
       return true;
     }
 
     const key = parts[0].trim();
     const value = parts[1].trim();
 
-    profile[key] = value;
+    await memoryManager.store({ content: { key, value } }, { storeName: "semantic", isExplicitRemember: true });
+    if (profile) profile[key] = value;
 
-    await saveProfile(profile);
-
-    console.log(
-      `\n🧠 Remembered ${key} = ${value}\n`
-    );
-
+    console.log(`\n🧠 Remembered ${key} = ${value}\n`);
     return true;
   }
 
   // what do you know about me
-  if (
-    userMessage.toLowerCase() ===
-    "what do you know about me"
-  ) {
+  if (userMessage.toLowerCase() === "what do you know about me") {
+    const currentProfile = await memoryManager.getLegacyProfile();
     console.log("\n🧠 Profile:\n");
-    console.log(
-      JSON.stringify(profile, null, 2)
-    );
+    console.log(JSON.stringify(currentProfile, null, 2));
     console.log();
     return true;
   }
 
   // what is my
-  if (
-    userMessage
-      .toLowerCase()
-      .startsWith("what is my ")
-  ) {
-    const key = userMessage
-      .replace(/^what is my /i, "")
-      .trim();
+  if (userMessage.toLowerCase().startsWith("what is my ")) {
+    const key = userMessage.replace(/^what is my /i, "").trim();
+    const currentProfile = await memoryManager.getLegacyProfile();
 
-    if (profile[key]) {
-      console.log(
-        `\nAI: Your ${key} is ${profile[key]}\n`
-      );
+    if (currentProfile[key]) {
+      console.log(`\nAI: Your ${key} is ${currentProfile[key]}\n`);
     } else {
-      console.log(
-        `\nAI: I don't know your ${key} yet.\n`
-      );
+      console.log(`\nAI: I don't know your ${key} yet.\n`);
     }
 
     return true;

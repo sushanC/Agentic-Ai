@@ -1,4 +1,4 @@
-import { loadMemory } from "../../features/memory/index.js";
+import { memoryManager } from "../../features/memory/index.js";
 import { getRecentHistory } from "../../features/chat/index.js";
 import { loadSummary } from "../../storage/summaryStorage.js";
 import { loadPDFMemory } from "../../features/pdf/index.js";
@@ -11,7 +11,7 @@ import { loadPDFMemory } from "../../features/pdf/index.js";
  */
 export class ContextAssembly {
   /**
-   * Assemble all context sources in parallel.
+   * Assemble all context sources in parallel via MemoryManager.
    *
    * @param {string} prompt - User request
    * @param {object} [options]
@@ -23,7 +23,7 @@ export class ContextAssembly {
 
     try {
       const [memory, history, summaryObj, pdfMemory] = await Promise.all([
-        loadMemory().catch(() => ({})),
+        memoryManager.retrieve(prompt).catch(() => ({})),
         getRecentHistory(historyLimit).catch(() => []),
         loadSummary().catch(() => ({})),
         loadPDFMemory().catch(() => ({}))
@@ -54,7 +54,6 @@ export class ContextAssembly {
 
   /**
    * Find best matching PDF by keyword overlap.
-   * Matches the search strategy in legacy findBestPDF.
    *
    * @param {string} question
    * @returns {Promise<string|null>} Best matching PDF name or null

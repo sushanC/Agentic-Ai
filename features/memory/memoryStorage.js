@@ -1,58 +1,20 @@
-import fs from "fs/promises";
-
-import {
-  getStoragePath
-} from "../../storage/storagePath.js";
-
-const MEMORY_FILE =
-  getStoragePath(
-    "profile.json"
-  );
+/**
+ * memoryStorage.js — Backward Compatibility Adapter
+ *
+ * Delegates memory file operations to the central MemoryManager.
+ */
+import { memoryManager } from "./MemoryManager.js";
 
 export async function loadMemory() {
+  return await memoryManager.getLegacyProfile();
+}
 
-  try {
-
-    const data =
-      await fs.readFile(
-        MEMORY_FILE,
-        "utf-8"
-      );
-
-    return JSON.parse(
-      data
-    );
-
-  } catch {
-
-    return {};
+export async function saveMemory(memory) {
+  for (const [key, value] of Object.entries(memory)) {
+    await memoryManager.store({ content: { key, value } }, { storeName: "semantic" });
   }
 }
 
-export async function saveMemory(
-  memory
-) {
-
-  await fs.writeFile(
-    MEMORY_FILE,
-    JSON.stringify(
-      memory,
-      null,
-      2
-    )
-  );
-}
-
-export async function deleteMemoryKey(
-  key
-) {
-
-  const memory =
-    await loadMemory();
-
-  delete memory[key];
-
-  await saveMemory(
-    memory
-  );
+export async function deleteMemoryKey(key) {
+  await memoryManager.delete(key, "semantic");
 }
