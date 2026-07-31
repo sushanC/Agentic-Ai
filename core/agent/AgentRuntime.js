@@ -1,6 +1,6 @@
 import { developerEvents } from "../events/DeveloperEvents.js";
 import { ContextAssembly } from "../context/ContextAssembly.js";
-import { routeRequest } from "../routing/ToolRouter.js";
+import { capabilityManager } from "../capabilities/CapabilityManager.js";
 import { planActions } from "../planning/ActionPlanner.js";
 import { executeActions } from "../execution/ActionExecutor.js";
 import { toolRegistry } from "../registry/ToolRegistry.js";
@@ -10,36 +10,41 @@ import { featureRegistry } from "../registry/FeatureRegistry.js";
  * AgentRuntime.js
  *
  * Primary entry point for Agent Core request execution.
- * Orchestrates request lifecycle: Context Assembly -> Routing/Planning -> Execution -> Diagnostics.
+ * Orchestrates request lifecycle: Context Assembly -> CapabilityManager -> Execution -> Diagnostics.
+ * AgentRuntime communicates ONLY with CapabilityManager.
  */
 export class AgentRuntime {
   constructor() {
     this.events = developerEvents;
     this.contextAssembly = ContextAssembly;
+    this.capabilityManager = capabilityManager;
     this.toolRegistry = toolRegistry;
     this.featureRegistry = featureRegistry;
   }
 
   /**
-   * Execute an incoming user request through the Agent Core pipeline.
+   * Execute an incoming user request through the Capability Framework.
    *
    * @param {string} prompt - User request
    * @param {string} [toolContext="chat"] - Active tool context ("chat", "voice", etc.)
-   * @returns {Promise<{tool: string, answer: any, executedSteps?: Array}>}
+   * @returns {Promise<{capability: string, tool: string, answer: any, executedSteps?: Array}>}
    */
   async run(prompt, toolContext = "chat") {
     this.events.beginRequest();
     this.events.emitDevEvent("RuntimeStarted", { prompt, toolContext });
 
     try {
-      const result = await routeRequest(prompt, toolContext);
+      const assembledContext = await this.contextAssembly.assembleContext(prompt, { toolContext });
+      const result = await this.capabilityManager.executeRequest(prompt, toolContext, assembledContext);
 
       this.events.emitDevEvent("RuntimeFinished", {
+        capability: result.capability,
         tool: result.tool,
         hasAnswer: !!result.answer
       });
 
       return result;
+
     } catch (err) {
       console.error("[AgentRuntime] Error executing request:", err);
       this.events.emitDevEvent("RuntimeError", { error: err.message });

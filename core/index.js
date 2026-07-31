@@ -2,11 +2,12 @@
  * core/index.js
  *
  * Public entry point for the Agent Core package (`core/`).
- * Re-exports all core registries, routers, planner, executor, context, runtime, and events modules.
+ * Re-exports all core capabilities, registries, routers, planner, executor, context, runtime, and events modules.
  */
 
-// Agent Runtime & Reliability Layer
+// Agent Runtime & Capability Framework
 export { AgentRuntime, agentRuntime } from "./agent/AgentRuntime.js";
+export * from "./capabilities/index.js";
 export * from "./runtime/index.js";
 
 // Planning & Execution
