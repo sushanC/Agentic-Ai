@@ -7,8 +7,10 @@ import { diagnostics } from "./Diagnostics.js";
  * RecoveryScheduler.js
  *
  * Background recovery scheduler.
- * Periodically inspects providers and models in OPEN or HALF_OPEN circuit states.
- * Probes them with lightweight non-blocking health checks and restores healthy ones.
+ * Periodically inspects all tracked circuit keys for OPEN or HALF_OPEN states.
+ * When a circuit transitions to HALF_OPEN (cooldown expired), notifies ProviderPool
+ * so the registry immediately reflects the recovery — future requests automatically
+ * consider the provider again without requiring any restart.
  */
 export class RecoveryScheduler {
   constructor(pool = providerPool) {
@@ -45,6 +47,10 @@ export class RecoveryScheduler {
 
   /**
    * Probe OPEN and HALF_OPEN providers/models to check if health has recovered.
+   *
+   * When a circuit transitions from OPEN to HALF_OPEN (cooldown expired),
+   * ProviderPool.notifyRecovery() is called so the registry immediately reflects
+   * the live state — no restart required.
    */
   async probe() {
     if (this.isProbing) return;
@@ -53,16 +59,19 @@ export class RecoveryScheduler {
     try {
       const circuits = circuitBreaker.circuits;
 
-      for (const [key, circuit] of circuits.entries()) {
+      for (const [key] of circuits.entries()) {
         const state = circuitBreaker.getState(key);
 
-        if (state === CircuitState.OPEN || state === CircuitState.HALF_OPEN) {
-          diagnostics.debug("RecoveryScheduler", `Probing unhealthy provider/model: ${key} (State: ${state})`);
+        if (state === CircuitState.OPEN) {
+          diagnostics.debug("RecoveryScheduler", `Provider/model "${key}" is OPEN. Awaiting cooldown.`);
+          continue;
+        }
 
-          // Allow circuit breaker state check to evaluate cooldown transition
-          if (state === CircuitState.HALF_OPEN) {
-            diagnostics.info("RecoveryScheduler", `Provider ${key} is HALF_OPEN. Restoring for trial probes.`);
-          }
+        if (state === CircuitState.HALF_OPEN) {
+          // Circuit cooldown has expired — provider is ready for a probe request.
+          // Notify ProviderPool so the registry reflects recovery immediately.
+          diagnostics.info("RecoveryScheduler", `Provider/model "${key}" transitioned to HALF_OPEN. Notifying registry.`);
+          this.pool.notifyRecovery(key);
         }
       }
     } catch (err) {

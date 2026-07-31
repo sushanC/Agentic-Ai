@@ -1,14 +1,25 @@
 import { providerPool } from "./ProviderPool.js";
-import { resolveModel } from "../registry/ModelRegistry.js";
 import { diagnostics } from "./Diagnostics.js";
 
 /**
  * FallbackManager.js
  *
- * Automated candidate fallback selector.
- * Evaluates model fallback chains and selects the next best healthy candidate
- * respecting capability, health score, latency, and provider availability.
- * Ensures request execution does not terminate while healthy providers remain.
+ * Fallback policy enforcer — minimal by design.
+ *
+ * Responsibilities (and ONLY these):
+ *   1. Delegate candidate discovery to ProviderPool (the single source of truth)
+ *   2. Skip providers that already failed in the current session (failedKeys)
+ *   3. Skip providers with OPEN circuits (via pool.isAvailable)
+ *   4. Skip providers in cooldown (via pool.getCooldownRemaining)
+ *   5. Return the next viable candidate
+ *
+ * FallbackManager does NOT:
+ *   - Resolve fallbackChain or fallback fields directly
+ *   - Import or name any provider
+ *   - Maintain provider lists
+ *   - Know which providers exist
+ *
+ * Provider discovery is fully delegated to ProviderPool.getCandidates().
  */
 export class FallbackManager {
   constructor(pool = providerPool) {
@@ -16,65 +27,63 @@ export class FallbackManager {
   }
 
   /**
-   * Resolve an ordered array of candidate models for fallback execution.
+   * Get an ordered list of candidate model configs for the given primary model.
+   * Fully delegated to ProviderPool — FallbackManager does zero resolution here.
    *
    * @param {object} primaryModelConfig - Resolved primary model config
-   * @returns {object[]} Array of candidate model configs in priority order (primary first)
+   * @param {object} [filters={}] - Optional capability filters forwarded to ProviderPool
+   * @returns {object[]} Ordered candidate list (primary first, fallbacks ranked by health/score)
    */
-  getFallbackCandidates(primaryModelConfig) {
+  getCandidates(primaryModelConfig, filters = {}) {
     if (!primaryModelConfig) return [];
-
-    const candidates = [primaryModelConfig];
-    const fallbackList = primaryModelConfig.fallbackChain || (primaryModelConfig.fallback ? [primaryModelConfig.fallback] : []);
-
-    for (const key of fallbackList) {
-      try {
-        const fallbackModel = resolveModel(key);
-        if (
-          fallbackModel &&
-          fallbackModel.enabled &&
-          fallbackModel.status !== "disabled" &&
-          !candidates.some(c => c.name === fallbackModel.name || c.modelId === fallbackModel.modelId)
-        ) {
-          candidates.push(fallbackModel);
-        }
-      } catch (err) {
-        diagnostics.warn("FallbackManager", `Failed resolving fallback key "${key}":`, { error: err.message });
-      }
-    }
-
-    return candidates;
+    return this.pool.getCandidates(primaryModelConfig, filters);
   }
 
   /**
-   * Filter and select the next available healthy candidate from candidate list.
+   * Filter and select the next available healthy candidate from the candidate list.
    *
-   * @param {object[]} candidates - Array of candidate model configs
-   * @param {Set<string>} [failedKeys] - Set of model/provider keys that failed in this session
-   * @returns {object|null} Next healthy candidate or null
+   * Policy applied (in order):
+   *   1. Skip if modelKey or providerKey is in failedKeys (session failures)
+   *   2. Skip if provider circuit is not available (OPEN circuit or cooldown)
+   *   3. Skip if model health check fails
+   *   4. Return the first candidate that passes all policy checks
+   *
+   * Degraded fallback: if no strictly healthy candidate exists, return the first
+   * candidate that hasn't failed in this session (prevents hard failure when all
+   * providers are degraded but not fully down).
+   *
+   * @param {object[]} candidates - Ordered candidate list from getCandidates()
+   * @param {Set<string>} [failedKeys=new Set()] - Keys that failed in this session
+   * @returns {object|null} Next viable candidate or null if all exhausted
    */
   selectNextCandidate(candidates, failedKeys = new Set()) {
     for (const candidate of candidates) {
       const modelKey = candidate.name || candidate.key || candidate.provider;
       const providerKey = candidate.provider;
 
+      // Policy: Skip session-failed candidates
       if (failedKeys.has(modelKey) || failedKeys.has(providerKey)) {
+        diagnostics.debug("FallbackManager", `Skipping failed candidate: ${candidate.displayName} (in failedKeys)`);
         continue;
       }
 
-      // Check live state in ProviderPool
-      const isProviderHealthy = this.pool.isAvailable(providerKey);
-      const isModelHealthy = this.pool.isAvailable(modelKey);
+      // Policy: Skip OPEN circuits and cooldown providers
+      const isProviderAvailable = this.pool.isAvailable(providerKey);
+      const isModelAvailable    = this.pool.isAvailable(modelKey);
 
-      if (isProviderHealthy && isModelHealthy) {
-        diagnostics.info("FallbackManager", `Selected candidate: ${candidate.displayName} (${candidate.provider}/${candidate.modelId})`);
+      if (isProviderAvailable && isModelAvailable) {
+        diagnostics.info("FallbackManager", `Selected candidate: ${candidate.displayName} (${providerKey}/${candidate.modelId})`, {
+          providerHealth: this.pool.getHealthScore(providerKey),
+          modelHealth:    this.pool.getHealthScore(modelKey),
+          cooldown:       this.pool.getCooldownRemaining(providerKey),
+        });
         return candidate;
-      } else {
-        diagnostics.debug("FallbackManager", `Skipped candidate ${candidate.displayName}: providerHealthy=${isProviderHealthy}, modelHealthy=${isModelHealthy}`);
       }
+
+      diagnostics.debug("FallbackManager", `Skipped candidate ${candidate.displayName}: providerAvailable=${isProviderAvailable}, modelAvailable=${isModelAvailable}`);
     }
 
-    // If no strictly healthy candidate found, return first candidate that hasn't failed in current session
+    // Degraded fallback: attempt first non-failed candidate even if unhealthy
     for (const candidate of candidates) {
       const modelKey = candidate.name || candidate.key || candidate.provider;
       if (!failedKeys.has(modelKey)) {
@@ -83,6 +92,7 @@ export class FallbackManager {
       }
     }
 
+    diagnostics.error("FallbackManager", "All candidates exhausted — no viable provider found.", { totalCandidates: candidates.length, failedKeys: [...failedKeys] });
     return null;
   }
 }
