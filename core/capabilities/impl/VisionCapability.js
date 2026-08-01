@@ -1,11 +1,14 @@
 import { BaseCapability } from "../BaseCapability.js";
 import { CapabilityResult } from "../CapabilityResult.js";
-import { askAI } from "../../../services/ai.js";
+import { visionManager } from "../../vision/VisionManager.js";
 
 /**
  * VisionCapability.js
  *
- * Handles image analysis, OCR, visual inspection, and multimodal requests.
+ * Lightweight integration facade connecting the Capability Framework
+ * and Workflow Engine to the core/vision/ Vision Framework subsystem.
+ *
+ * Contains NO business logic, OCR logic, image logic, or provider logic.
  */
 export class VisionCapability extends BaseCapability {
   constructor() {
@@ -13,19 +16,44 @@ export class VisionCapability extends BaseCapability {
   }
 
   canHandle(context) {
-    if (context.includesAny("analyze image", "describe image", "ocr", "read text from image", "extract text from image", "visual analysis")) {
+    if (context.includesAny(
+      "analyze image", "describe image", "ocr", "read text from image",
+      "extract text from image", "visual analysis", "explain screenshot",
+      "analyze chart", "analyze diagram", "read terminal", "explain ui"
+    )) {
       return 0.90;
     }
     return 0.0;
   }
 
   async execute(context) {
-    const answer = await askAI(context.prompt, context.toolContext);
+    const imageInput = context.workingMemory?.images || context.runtimeState?.imageInput || context.prompt;
+    const task = context.runtimeState?.task || "describe";
+
+    const visionResult = await visionManager.processVisionRequest(
+      context.prompt,
+      imageInput,
+      { task }
+    );
+
     return CapabilityResult.create({
+      success: visionResult.success,
       capability: this.name,
       tool: "vision",
-      answer,
-      executedSteps: [{ name: "vision_ocr_analysis", status: "completed" }],
+      answer: visionResult.summary,
+      executedSteps: [{
+        name: `vision_${visionResult.task}`,
+        status: visionResult.success ? "completed" : "failed"
+      }],
+      diagnostics: {
+        provider: visionResult.provider,
+        model: visionResult.model,
+        confidence: visionResult.confidence
+      },
+      metadata: {
+        task: visionResult.task,
+        parsedAnalysis: visionResult.parsedAnalysis
+      }
     });
   }
 }
