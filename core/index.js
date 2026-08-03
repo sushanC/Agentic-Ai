@@ -16,6 +16,9 @@ export * from "./workflow/index.js";
 // Vision Framework
 export * from "./vision/index.js";
 
+// Email System V2
+export * from "./email/index.js";
+
 // Planning & Execution
 export { planActions } from "./planning/ActionPlanner.js";
 export { executeActions } from "./execution/ActionExecutor.js";

@@ -88,13 +88,16 @@ export class WorkflowNode {
   }
 
   /**
-   * Mark this node as failed with the error.
-   * @param {Error} error
+   * Mark this node as failed with an error or structured failure payload.
+   * @param {Error|object} error
    * @returns {this}
    */
   markFailed(error) {
     this.status     = NodeStatus.FAILED;
     this.error      = error;
+    if (typeof error === "object" && error !== null && !this.output) {
+      this.output = error;
+    }
     this.finishedAt = Date.now();
     return this;
   }
@@ -114,6 +117,14 @@ export class WorkflowNode {
    * @returns {object}
    */
   toJSON() {
+    let errStr = null;
+    if (this.error) {
+      if (typeof this.error === "string") errStr = this.error;
+      else if (this.error.message) errStr = this.error.message;
+      else if (this.error.error) errStr = String(this.error.error);
+      else errStr = JSON.stringify(this.error);
+    }
+
     return {
       id:                 this.id,
       task:               this.task,
@@ -122,7 +133,7 @@ export class WorkflowNode {
       status:             this.status,
       input:              this.input,
       output:             this.output,
-      error:              this.error ? (this.error.message || String(this.error)) : null,
+      error:              errStr,
       startedAt:          this.startedAt,
       finishedAt:         this.finishedAt,
       metadata:           this.metadata,

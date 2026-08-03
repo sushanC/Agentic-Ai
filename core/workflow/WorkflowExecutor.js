@@ -71,11 +71,17 @@ export class WorkflowExecutor {
         // Execute through the standard CapabilityLifecycle (unchanged)
         const capResult = await CapabilityLifecycle.run(capability, capabilityContext);
 
-        // Persist output to WorkflowContext and to the node
+        // Persist output to WorkflowContext
         workflowContext.setNodeOutput(node.id, capResult);
-        node.markCompleted(capResult);
 
-        workflowDiagnostics.logNodeCompleted(workflowId, node.id, Date.now() - nodeStart);
+        // Check if capability returned structured failure
+        if (capResult && capResult.success === false) {
+          node.markFailed(capResult);
+          workflowDiagnostics.logNodeFailed(workflowId, node.id, capResult.error || capResult.answer || "Capability returned success: false");
+        } else {
+          node.markCompleted(capResult);
+          workflowDiagnostics.logNodeCompleted(workflowId, node.id, Date.now() - nodeStart);
+        }
 
       } catch (err) {
         node.markFailed(err);
@@ -145,18 +151,18 @@ export class WorkflowExecutor {
     const skippedNodes   = graph.getAllNodes().filter(n => n.status === NodeStatus.SKIPPED);
     const allNodes       = graph.getAllNodes();
 
-    // Terminal node: the last completed node in topological order
-    const orderedCompleted = graph.topologicalSort()
-      .filter(n => n.status === NodeStatus.COMPLETED);
-    const terminalNode = orderedCompleted[orderedCompleted.length - 1] ?? null;
+    // Terminal node: the last executed node (completed or failed) in topological order
+    const orderedExecuted = graph.topologicalSort()
+      .filter(n => n.status === NodeStatus.COMPLETED || n.status === NodeStatus.FAILED);
+    const terminalNode = orderedExecuted[orderedExecuted.length - 1] ?? null;
 
     const terminalResult    = terminalNode ? wCtx.getNodeOutput(terminalNode.id) : null;
-    const overallSuccess    = failedNodes.length === 0 && completedNodes.length > 0;
+    const overallSuccess    = failedNodes.length === 0 && completedNodes.length > 0 && terminalResult?.success !== false;
 
-    // Aggregate executed steps from all completed nodes
-    const executedSteps = completedNodes.flatMap(n => {
+    // Aggregate executed steps from all completed and failed nodes
+    const executedSteps = orderedExecuted.flatMap(n => {
       const out = wCtx.getNodeOutput(n.id);
-      return out?.executedSteps ?? [{ name: n.task, status: "completed" }];
+      return out?.executedSteps ?? [{ name: n.task, status: n.status }];
     });
 
     return WorkflowResult.create({
@@ -166,7 +172,7 @@ export class WorkflowExecutor {
       failedNodes:     failedNodes.map(n => n.toJSON()),
       skippedNodes:    skippedNodes.map(n => n.toJSON()),
       outputs:         wCtx.getAllNodeOutputs(),
-      answer:          terminalResult?.answer ?? null,
+      answer:          terminalResult?.answer ?? (terminalResult?.error ? String(terminalResult.error) : null),
       capability:      terminalResult?.capability ?? "chat",
       tool:            terminalResult?.tool ?? "chat",
       executedSteps,

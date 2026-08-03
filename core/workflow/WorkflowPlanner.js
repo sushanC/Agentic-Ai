@@ -27,6 +27,8 @@ export class WorkflowPlanner {
      * The FIRST matching rule wins (most-specific rules should appear earlier).
      */
     this._taskRules = [
+      // Email
+      { pattern: /\b(email|send email|draft email|reply to email|forward email|write an email|send an email)\b/i, capability: "email", taskLabel: "Email operation" },
       // Memory
       { pattern: /\b(remember|recall|what is my|what do you know|forget)\b/i,      capability: "memory",   taskLabel: "Memory operation"     },
       // Vision

@@ -17,6 +17,7 @@ import { TaskCapability }     from "./impl/TaskCapability.js";
 import { NotesCapability }    from "./impl/NotesCapability.js";
 import { WebCapability }      from "./impl/WebCapability.js";
 import { VoiceCapability }    from "./impl/VoiceCapability.js";
+import { EmailCapability }    from "./impl/EmailCapability.js";
 
 /**
  * CapabilityManager.js
@@ -48,6 +49,7 @@ export class CapabilityManager {
     this.registry.register(new NotesCapability());
     this.registry.register(new WebCapability());
     this.registry.register(new VoiceCapability());
+    this.registry.register(new EmailCapability());
   }
 
   /**

@@ -155,9 +155,20 @@ export async function confirmAction(confirmationId) {
 
     console.error(`\n❌ CONFIRMATION EXECUTION ERROR [${confirmationId}]:`, err);
 
+    // Remove the pending record on failure to prevent stale executable records
+    await removePendingAction(confirmationId);
+
     return {
       success: false,
-      message: `Execution failed: ${err.message}`
+      message: err.userMessage || err.message || `Execution failed: ${err.message}`,
+      error: {
+        code: err.code || "EXECUTION_ERROR",
+        message: err.message || String(err),
+        userMessage: err.userMessage || null,
+        retryable: err.retryable !== undefined ? err.retryable : false,
+        requiresReauth: Boolean(err.requiresReauth),
+        authUrl: err.authUrl || null
+      }
     };
   }
 }
