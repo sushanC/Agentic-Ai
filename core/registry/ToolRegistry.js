@@ -8,6 +8,15 @@ import { SaveResearchNoteTool } from "../../services/tools/saveResearchNoteTool.
 import { CreateTaskTool } from "../../services/tools/createTaskTool.js";
 import { CreateStudyTasksTool } from "../../services/tools/createStudyTasksTool.js";
 import { EmailDraftTool } from "../../services/tools/emailDraftTool.js";
+import { createPending } from "../../services/confirmationService.js";
+import { validateDesktopAction } from "../../services/desktop/DesktopSecurityPolicy.js";
+
+// Calendar System V1 Actions
+import { CreateEventAction }      from "../calendar/actions/CreateEventAction.js";
+import { UpdateEventAction }      from "../calendar/actions/UpdateEventAction.js";
+import { DeleteEventAction }      from "../calendar/actions/DeleteEventAction.js";
+import { ListEventsAction }       from "../calendar/actions/ListEventsAction.js";
+import { CheckAvailabilityAction } from "../calendar/actions/CheckAvailabilityAction.js";
 
 // Desktop Control Framework Tools
 import { DesktopOpenAppTool }       from "../../services/tools/desktop/desktopOpenAppTool.js";
@@ -87,7 +96,7 @@ export class ToolRegistry {
     const tool = this.getTool(toolName);
 
     if (!tool) {
-      return `⚠️ Unknown action: ${toolName}`;
+      return { success: false, code: "UNKNOWN_TOOL", userMessage: "That action is not available." };
     }
 
     const normalizedAction = {
@@ -96,6 +105,23 @@ export class ToolRegistry {
       input:        action.input !== undefined ? action.input : {},
       _confirmedAt: action._confirmedAt
     };
+
+    if (typeof toolName === "string" && toolName.startsWith("desktop_")) {
+      const policy = await validateDesktopAction(toolName, normalizedAction);
+      if (!policy.valid) {
+        return { success: false, code: policy.code, userMessage: policy.message };
+      }
+      if (policy.requiresConfirmation) {
+        return createPending({
+          tool: toolName,
+          action: normalizedAction.action,
+          payload: normalizedAction,
+          preview: policy.preview,
+          title: policy.title,
+          message: policy.message,
+        });
+      }
+    }
 
     return await tool.execute(normalizedAction);
   }
@@ -151,6 +177,15 @@ toolRegistry.registerTool("vision_analysis", {
 
 // ─── Phase 3 — Confirmation-Gated Tools ──────────────────────────────────────
 toolRegistry.registerTool("email_draft",         new EmailDraftTool());
+
+// ─── Calendar System V1 Tools ────────────────────────────────────────────────
+// Mutating actions (require confirmation via confirmationService)
+toolRegistry.registerTool("calendar_create",          new CreateEventAction());
+toolRegistry.registerTool("calendar_update",          new UpdateEventAction());
+toolRegistry.registerTool("calendar_delete",          new DeleteEventAction());
+// Read-only actions (no confirmation required)
+toolRegistry.registerTool("calendar_list",            new ListEventsAction());
+toolRegistry.registerTool("calendar_check_availability", new CheckAvailabilityAction());
 
 // ─── Phase 2 — Desktop Control Framework ─────────────────────────────────────
 // LOW risk (no confirmation required)

@@ -11,7 +11,6 @@ import { askModelCie } from "../../services/ai.js";
  */
 export async function planActions(message) {
   console.log("\n🧠 PLANNING:");
-  console.log(message);
 
   try {
     const response = await askModelCie("groq", message, "ActionPlanning");
@@ -33,7 +32,7 @@ export async function planActions(message) {
     return plan;
   } catch (err) {
     console.log("\n❌ PLANNER ERROR:");
-    console.log(err);
+    console.error("[ActionPlanner] Planning failed", { code: err.code || "PLANNING_ERROR" });
 
     return { actions: [] };
   }

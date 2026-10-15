@@ -21,8 +21,8 @@ export function getAuthUrl() {
   return gmailAuthManager.getAuthUrl();
 }
 
-export async function exchangeCodeForTokens(code) {
-  return await gmailAuthManager.exchangeCodeForTokens(code);
+export async function exchangeCodeForTokens(code, state) {
+  return await gmailAuthManager.exchangeCodeForTokens(code, state);
 }
 
 export async function getAuthenticatedClient() {

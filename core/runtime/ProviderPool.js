@@ -645,8 +645,7 @@ async function _initResolveModel() {
 // Kick off pre-load immediately on module load (non-blocking)
 _initResolveModel();
 
-// Override getCandidates to use cached resolveModel once available
-const _originalGetCandidates = ProviderPool.prototype.getCandidates;
+// Override getCandidates to use cached resolveModel once available and enforce canonical fallback order
 ProviderPool.prototype.getCandidates = function(primaryModelConfig, filters = {}) {
   if (!primaryModelConfig) {
     diagnostics.warn("ProviderPool", "getCandidates() called with null modelConfig — returning empty list.");

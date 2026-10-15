@@ -21,6 +21,7 @@ import {
 import {
   incrementStat
 } from "../../storage/statsStorage.js";
+import { logSafeError } from "../../services/httpSecurity.js";
 
 export async function handleStandardChat(
   message
@@ -29,8 +30,17 @@ export async function handleStandardChat(
   await addMessage("user", message);
   await updateMemory(message);
 
-  const result = await routeRequest(message);
-  const reply = result.answer;
+  let reply;
+  try {
+    const result = await routeRequest(message);
+    reply = result.answer || result.userMessage || result.response;
+  } catch (err) {
+    logSafeError("[chatService] Request execution failed", err);
+  }
+
+  if (!reply || typeof reply !== "string" || reply.trim() === "") {
+    reply = "Sorry for the inconvenience. I wasn't able to complete that request. Please try again.";
+  }
 
   await addMessage("assistant", reply);
   await updateSummary();

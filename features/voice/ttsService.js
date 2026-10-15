@@ -76,9 +76,7 @@ export function generateTTS(text, options = {}) {
 
     child.on("close", (code) => {
       if (code !== 0) {
-        console.error("[TTS] Python exited with code:", code);
-        console.error("[TTS] stderr:", stderr);
-        console.error("[TTS] stdout:", stdout);
+        console.error("[TTS] Speech synthesis process failed", { code });
 
         reject(
           new Error(

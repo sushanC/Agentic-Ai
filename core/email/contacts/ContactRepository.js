@@ -48,10 +48,10 @@ export class ContactRepository {
       };
 
       await saveMemory(memory);
-      console.log(`📧 [ContactRepository] Contact Saved: "${name}" → ${email}`);
+      console.log("[ContactRepository] Contact saved");
       return true;
     } catch (err) {
-      console.error(`❌ [ContactRepository] Failed to save contact "${name}":`, err.message);
+      console.error("[ContactRepository] Contact save failed", { code: err.code || "STORAGE_ERROR" });
       return false;
     }
   }

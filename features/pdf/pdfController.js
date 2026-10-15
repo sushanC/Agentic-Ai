@@ -2,13 +2,14 @@ import { loadPDFMemory, deletePDF } from "./pdfStorage.js";
 import { askPDF } from "./pdfRetriever.js";
 import { searchPDFChunks } from "./pdfSearch.js";
 import { uploadAndProcessPDF, executePDFAction } from "./pdfService.js";
+import { logSafeError } from "../../services/httpSecurity.js";
 
 export async function uploadPDF(req, res) {
   try {
     const result = await uploadAndProcessPDF(req.file.path, req.file.originalname);
     res.json(result);
   } catch (err) {
-    console.error(err);
+    logSafeError("PDF upload failed", err);
     res.status(500).json({ error: "Upload failed" });
   }
 }
@@ -21,15 +22,12 @@ export async function listPDFs(req, res) {
 export async function askPDFController(req, res) {
   try {
     const { pdfName, question } = req.body;
-    console.log("PDF:", pdfName);
-    console.log("Question:", question);
 
     const answer = await askPDF(pdfName, question);
     res.json({ answer });
   } catch (err) {
-    console.error("PDF ASK ERROR:");
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    logSafeError("PDF question failed", err);
+    res.status(500).json({ error: "PDF question failed." });
   }
 }
 
@@ -38,7 +36,7 @@ export async function deletePDFController(req, res) {
     await deletePDF(req.params.name);
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    logSafeError("PDF deletion failed", err);
     res.status(500).json({ error: "Failed to delete PDF" });
   }
 }
@@ -59,8 +57,8 @@ export async function searchPDFController(req, res) {
 
     res.json({ results });
   } catch (err) {
-    console.error("PDF SEARCH ERROR:", err);
-    res.status(500).json({ error: err.message });
+    logSafeError("PDF search failed", err);
+    res.status(500).json({ error: "PDF search failed." });
   }
 }
 
@@ -80,7 +78,7 @@ export async function actionPDFController(req, res) {
 
     res.json(resultObj);
   } catch (err) {
-    console.error("PDF ACTION ERROR:", err);
-    res.status(500).json({ error: err.message });
+    logSafeError("PDF action failed", err);
+    res.status(500).json({ error: "PDF action failed." });
   }
 }

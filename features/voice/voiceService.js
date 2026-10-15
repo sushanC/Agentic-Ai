@@ -7,7 +7,7 @@ export async function handleVoice() {
 
   const text = await listen();
 
-  console.log(`\nYou Said:\n${text}`);
+  console.log("[VoiceService] Speech recognized", { characterCount: text?.length || 0 });
 
   const answer = await askAI(text);
 

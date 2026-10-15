@@ -5,6 +5,7 @@ import { WorkflowPlanner, workflowPlanner }        from "./WorkflowPlanner.js";
 import { WorkflowExecutor }                        from "./WorkflowExecutor.js";
 import { WorkflowValidator, workflowValidator }    from "./WorkflowValidator.js";
 import { workflowDiagnostics }                     from "./WorkflowDiagnostics.js";
+import { ErrorNormalizer }                         from "../errors/ErrorNormalizer.js";
 
 /**
  * WorkflowEngine.js
@@ -92,15 +93,48 @@ export class WorkflowEngine {
     } catch (err) {
       workflowDiagnostics.logError(workflowId, err);
 
-      // Re-throw WorkflowValidationError as-is (caller should surface it clearly)
-      if (err instanceof WorkflowValidationError) throw err;
+      // Re-throw WorkflowValidationError as-is if desired
+      if (err instanceof WorkflowValidationError) {
+        const normalizedValidation = ErrorNormalizer.normalize(err, { capability: "workflow", tool: "workflow" });
+        return WorkflowResult.create({
+          success:     false,
+          workflowId,
+          answer:      normalizedValidation.userMessage,
+          capability:  "workflow",
+          tool:        "workflow",
+          error: {
+            code:           normalizedValidation.code,
+            userMessage:    normalizedValidation.userMessage,
+            retryable:      false,
+            requiresReauth: false,
+          },
+          diagnostics: { error: err.message, violations: err.violations },
+        });
+      }
 
-      // For unexpected errors, wrap in a failed WorkflowResult rather than crashing
+      // For unexpected errors, normalize via ErrorNormalizer rather than returning answer: null
+      const normalized = ErrorNormalizer.normalize(err, {
+        capability: "workflow",
+        tool: "workflow"
+      });
+
       return WorkflowResult.create({
         success:     false,
         workflowId,
-        answer:      null,
-        diagnostics: { error: err.message },
+        answer:      normalized.userMessage,
+        capability:  normalized.capability || "unknown",
+        tool:        normalized.tool || "unknown",
+        error: {
+          code:           normalized.code,
+          userMessage:    normalized.userMessage,
+          retryable:      normalized.retryable,
+          requiresReauth: normalized.requiresReauth,
+          authUrl:        normalized.authUrl,
+        },
+        diagnostics: {
+          technicalMessage: normalized.technicalMessage,
+          errorStack:       err.stack,
+        },
       });
     }
   }

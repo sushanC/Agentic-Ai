@@ -4,8 +4,9 @@ import { capabilityDiagnostics } from "./CapabilityDiagnostics.js";
 import { CapabilityContext }    from "./CapabilityContext.js";
 import { CapabilityResult }     from "./CapabilityResult.js";
 import { workflowEngine }       from "../workflow/WorkflowEngine.js";
+import { ErrorNormalizer }       from "../errors/ErrorNormalizer.js";
 
-// Import all 11 built-in capability classes
+// Import all 12 built-in capability classes
 import { ChatCapability }     from "./impl/ChatCapability.js";
 import { MemoryCapability }   from "./impl/MemoryCapability.js";
 import { VisionCapability }   from "./impl/VisionCapability.js";
@@ -18,6 +19,7 @@ import { NotesCapability }    from "./impl/NotesCapability.js";
 import { WebCapability }      from "./impl/WebCapability.js";
 import { VoiceCapability }    from "./impl/VoiceCapability.js";
 import { EmailCapability }    from "./impl/EmailCapability.js";
+import { CalendarCapability } from "./impl/CalendarCapability.js";
 
 /**
  * CapabilityManager.js
@@ -50,6 +52,7 @@ export class CapabilityManager {
     this.registry.register(new WebCapability());
     this.registry.register(new VoiceCapability());
     this.registry.register(new EmailCapability());
+    this.registry.register(new CalendarCapability());
   }
 
   /**
@@ -75,7 +78,20 @@ export class CapabilityManager {
     });
 
     try {
-      return await this._workflowEngine.execute(context);
+      const result = await this._workflowEngine.execute(context);
+      if (result && result.answer) return result;
+
+      // If workflow result has no answer, normalize it
+      const normalized = ErrorNormalizer.normalize(result?.error || "CAPABILITY_FAILED", {
+        capability: result?.capability || "chat",
+        tool: result?.tool || "chat"
+      });
+      return CapabilityResult.create({
+        ...result,
+        success: false,
+        answer: normalized.userMessage,
+        response: normalized.userMessage,
+      });
 
     } catch (err) {
       this.diagnostics.logError("workflow", err);
@@ -84,15 +100,33 @@ export class CapabilityManager {
       console.warn("[CapabilityManager] WorkflowEngine failed — falling back to ChatCapability.", err.message);
       const chatCap = this.registry.getCapability("chat");
       if (chatCap) {
-        const { CapabilityLifecycle } = await import("./CapabilityLifecycle.js");
-        const fallbackResult = await CapabilityLifecycle.run(chatCap, context);
-        return CapabilityResult.create({
-          ...fallbackResult,
-          metadata: { fallbackReason: err.message },
-        });
+        try {
+          const { CapabilityLifecycle } = await import("./CapabilityLifecycle.js");
+          const fallbackResult = await CapabilityLifecycle.run(chatCap, context);
+          if (fallbackResult && fallbackResult.answer) {
+            return CapabilityResult.create({
+              ...fallbackResult,
+              metadata: { fallbackReason: err.message },
+            });
+          }
+        } catch (chatErr) {
+          console.warn("[CapabilityManager] ChatCapability fallback also failed.", chatErr.message);
+        }
       }
 
-      throw err;
+      const normalized = ErrorNormalizer.normalize(err, { capability: "chat", tool: "chat" });
+      return CapabilityResult.create({
+        success: false,
+        capability: "chat",
+        tool: "chat",
+        answer: normalized.userMessage,
+        response: normalized.userMessage,
+        diagnostics: { error: err.message },
+        metadata: {
+          code: normalized.code,
+          technicalMessage: normalized.technicalMessage,
+        }
+      });
     }
   }
 

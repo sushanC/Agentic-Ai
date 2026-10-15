@@ -49,7 +49,7 @@ export class WhisperDaemonManager {
             this.currentResolve = null;
           }
         } catch (e) {
-          console.error("[STT] Error parsing Whisper output:", raw, e);
+          console.error("[STT] Failed to parse Whisper response", { code: e.code || "INVALID_RESPONSE" });
           if (this.currentResolve) {
             this.currentResolve({ text: "", error: raw });
             this.currentResolve = null;
@@ -59,7 +59,7 @@ export class WhisperDaemonManager {
 
       this.whisperDaemon.stderr.on("data", (data) => {
         const msg = data.toString().trim();
-        console.warn("[STT Daemon Debug/Error]:", msg);
+        console.warn("[STT] Whisper daemon emitted diagnostic output", { characterCount: msg.length });
       });
 
       this.whisperDaemon.on("close", (code) => {
@@ -69,7 +69,7 @@ export class WhisperDaemonManager {
       });
 
       this.whisperDaemon.on("error", (err) => {
-        console.error("[STT] Whisper Daemon process error:", err);
+        console.error("[STT] Whisper daemon process failed", { code: err.code || "PROCESS_ERROR" });
         this.whisperDaemon = null;
         this.daemonInitPromise = null;
         resolve(false);

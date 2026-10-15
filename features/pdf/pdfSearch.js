@@ -62,7 +62,6 @@ export async function searchPDFMemory(keyword) {
   matches.forEach(item => {
     console.log(`Score: ${item.score.toFixed(3)}`);
     console.log(`PDF: ${item.file}`);
-    console.log(item.text.slice(0, 400));
     console.log("\n-------------------\n");
   });
 

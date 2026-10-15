@@ -1,4 +1,5 @@
 import { handleVoice } from "./voiceService.js";
+import { logSafeError } from "../../services/httpSecurity.js";
 
 export async function postVoiceController(req, res) {
   console.log("VOICE ROUTE HIT");
@@ -7,7 +8,7 @@ export async function postVoiceController(req, res) {
     const result = await handleVoice();
     res.json(result);
   } catch (err) {
-    console.error("VOICE ERROR:", err);
+    logSafeError("Voice request failed", err);
     res.status(500).json({
       error: "Voice failed"
     });

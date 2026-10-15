@@ -1,213 +1,145 @@
+import crypto from "crypto";
 import {
   addPendingAction,
-  getPendingAction,
-  removePendingAction,
-  cleanExpired
+  claimPendingAction,
+  finishPendingAction,
+  cancelPendingAction,
+  loadPendingActions,
+  cleanExpired,
 } from "../storage/pendingActionsStorage.js";
 
-/**
- * confirmationService.js
- *
- * The core Confirmation Layer for the Tool Framework.
- *
- * This service is GENERIC — it contains zero tool-specific logic.
- * Any future tool (calendar, file delete, browser purchase, etc.)
- * uses this same service to create and resolve confirmations.
- *
- * Architecture:
- *   Tool.execute()
- *     → confirmationService.createPending(...)
- *     → returns { status: "pending_confirmation", confirmationId, ... }
- *
- *   POST /confirm { confirmationId }
- *     → confirmationService.confirmAction(id)
- *     → executes the original tool action via the registry
- *     → returns execution result
- *
- *   POST /cancel { confirmationId }
- *     → confirmationService.cancelAction(id)
- *     → deletes pending record
- *     → returns { success: true }
- *
- * Reused by: emailDraftTool.js (Phase 3)
- * Future tools: calendarTool.js, deleteFileTool.js, checkoutTool.js, etc.
- */
-
 const DEFAULT_TTL_MINUTES = 30;
+const defaultStorage = { addPendingAction, claimPendingAction, finishPendingAction, cancelPendingAction, loadPendingActions, cleanExpired };
 
-/**
- * Generate a unique confirmation ID.
- * Format: <timestamp>-<4-char random hex>
- */
-function generateId() {
-  const ts = Date.now().toString(36);
-  const rand = Math.random().toString(36).substring(2, 6);
-  return `${ts}-${rand}`;
+async function executeThroughRegistry(action) {
+  const { registry } = await import("./toolRegistry.js");
+  return registry.executeTool(action);
 }
 
-/**
- * Create a pending confirmation for a dangerous action.
- *
- * @param {object} options
- * @param {string}  options.tool         - Tool name (e.g. "email_draft")
- * @param {string}  options.action       - Action name (e.g. "draft")
- * @param {object}  options.payload      - The original action object for re-execution
- * @param {object}  options.preview      - Structured data for frontend to display
- * @param {string}  options.title        - Short human-readable title
- * @param {string}  options.message      - Confirmation prompt shown to user
- * @param {number} [options.ttlMinutes]  - How long this confirmation stays valid (default: 30)
- *
- * @returns {object} - The full confirmation response object (returned to frontend)
- */
-export async function createPending({
-  tool,
-  action,
-  payload,
-  preview,
-  title,
-  message,
-  ttlMinutes = DEFAULT_TTL_MINUTES
-}) {
-
-  const id = generateId();
-  const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + ttlMinutes * 60 * 1000);
-
-  const pendingRecord = {
-    id,
-    tool,
-    action,
-    payload,
-    preview,
-    title,
-    message,
-    createdAt: createdAt.toISOString(),
-    expiresAt: expiresAt.toISOString(),
-    status: "pending"
-  };
-
-  await addPendingAction(pendingRecord);
-
-  console.log(`\n🔒 CONFIRMATION CREATED [${tool}/${action}]: ${id}`);
-
-  return {
-    success: true,
-    status: "pending_confirmation",
-    confirmationId: id,
-    tool,
-    action,
-    title,
-    message,
-    preview,
-    expiresAt: expiresAt.toISOString()
-  };
-}
-
-/**
- * Confirm a pending action — execute it and clean up.
- *
- * @param {string} confirmationId
- * @returns {object} - { success: true, result: "..." } or { success: false, message: "..." }
- */
-export async function confirmAction(confirmationId) {
-
-  // Always clean stale records before checking
-  await cleanExpired();
-
-  const pending = await getPendingAction(confirmationId);
-
-  if (!pending) {
-    return {
-      success: false,
-      message: "Confirmation request not found or has expired."
+export function createConfirmationService({ storage = defaultStorage, executeTool = executeThroughRegistry } = {}) {
+  async function createPending({ tool, action, payload, preview, title, message, ttlMinutes = DEFAULT_TTL_MINUTES }) {
+    const createdAt = new Date();
+    const expiresAt = new Date(createdAt.getTime() + ttlMinutes * 60 * 1000);
+    const id = `${Date.now().toString(36)}-${crypto.randomUUID()}`;
+    const record = {
+      id, tool, action, payload, preview, title, message,
+      createdAt: createdAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      status: "pending",
     };
-  }
-
-  console.log(`\n✅ CONFIRMING [${pending.tool}/${pending.action}]: ${confirmationId}`);
-
-  try {
-
-    // Lazy import to avoid circular dependencies
-    const { registry } = await import("./toolRegistry.js");
-
-    // Reconstruct the action object that the tool expects
-    const actionToExecute = {
-      ...pending.payload,
-      _confirmedAt: new Date().toISOString()
-    };
-
-    // Execute the tool's confirmed logic
-    const result = await registry.executeTool(actionToExecute);
-
-    // Remove the pending record now that it has been executed
-    await removePendingAction(confirmationId);
-
-    console.log(`\n🎯 CONFIRMATION EXECUTED [${pending.tool}]: ${confirmationId}`);
-
+    await storage.addPendingAction(record);
     return {
       success: true,
-      tool: pending.tool,
-      action: pending.action,
-      result
-    };
-
-  } catch (err) {
-
-    console.error(`\n❌ CONFIRMATION EXECUTION ERROR [${confirmationId}]:`, err);
-
-    // Remove the pending record on failure to prevent stale executable records
-    await removePendingAction(confirmationId);
-
-    return {
-      success: false,
-      message: err.userMessage || err.message || `Execution failed: ${err.message}`,
-      error: {
-        code: err.code || "EXECUTION_ERROR",
-        message: err.message || String(err),
-        userMessage: err.userMessage || null,
-        retryable: err.retryable !== undefined ? err.retryable : false,
-        requiresReauth: Boolean(err.requiresReauth),
-        authUrl: err.authUrl || null
-      }
-    };
-  }
-}
-
-/**
- * Cancel a pending action — remove it without executing.
- *
- * @param {string} confirmationId
- * @returns {object} - { success: true } or { success: false, message: "..." }
- */
-export async function cancelAction(confirmationId) {
-
-  const pending = await getPendingAction(confirmationId);
-
-  if (!pending) {
-    return {
-      success: false,
-      message: "Confirmation request not found."
+      status: "pending_confirmation",
+      confirmationId: id,
+      tool,
+      action,
+      title,
+      message,
+      preview,
+      expiresAt: record.expiresAt,
     };
   }
 
-  await removePendingAction(confirmationId);
+  async function confirmAction(confirmationId) {
+    if (typeof confirmationId !== "string" || confirmationId.length > 160) {
+      return { success: false, code: "INVALID_CONFIRMATION_ID", message: "This confirmation request is invalid or has expired." };
+    }
 
-  console.log(`\n🚫 CONFIRMATION CANCELLED [${pending.tool}/${pending.action}]: ${confirmationId}`);
+    const claim = await storage.claimPendingAction(confirmationId);
+    if (claim.status !== "claimed") {
+      const messages = {
+        missing: "This confirmation request was not found.",
+        expired: "This confirmation request has expired.",
+        already_claimed: "This action has already been claimed and cannot run again. Check its status before creating a new action.",
+      };
+      return { success: false, code: claim.status.toUpperCase(), status: claim.status, message: messages[claim.status] };
+    }
 
-  return {
-    success: true,
-    message: `Action cancelled: ${pending.title}`
-  };
+    const pending = claim.action;
+    try {
+      const action = { ...pending.payload, _confirmedAt: new Date().toISOString() };
+      const result = await executeTool(action);
+      const failed = result && typeof result === "object" && result.success === false;
+      const proposedCode = result?.code || result?.error?.code;
+      const code = typeof proposedCode === "string" && /^[A-Z0-9_-]{1,64}$/.test(proposedCode)
+        ? proposedCode
+        : "ACTION_FAILED";
+      const safeMessage = typeof result?.userMessage === "string"
+        ? result.userMessage
+        : "The action failed and will not be run again automatically.";
+      const requiresReauth = Boolean(result?.requiresReauth || result?.metadata?.requiresReauth || result?.error?.requiresReauth);
+      const retryable = Boolean(result?.retryable ?? result?.metadata?.automaticRetryable ?? result?.error?.retryable ?? false);
+      const safeResult = failed ? {
+        success: false,
+        code,
+        userMessage: safeMessage,
+        retryable,
+        requiresReauth,
+        ...(typeof result.authUrl === "string" ? { authUrl: result.authUrl } : {}),
+      } : result;
+      const error = failed ? {
+        code,
+        requiresReauth,
+        retryable,
+      } : null;
+      await storage.finishPendingAction(confirmationId, { status: failed ? "failed" : "completed", error });
+      return {
+        success: !failed,
+        tool: pending.tool,
+        action: pending.action,
+        status: failed ? "failed" : "completed",
+        ...(failed ? { message: safeMessage, error: { code, requiresReauth, retryable } } : {}),
+        result: safeResult,
+      };
+    } catch (err) {
+      const code = typeof err.code === "string" && /^[A-Z0-9_-]{1,64}$/.test(err.code) ? err.code : "EXECUTION_ERROR";
+      console.error("[Confirmation] Action execution failed", { tool: pending.tool, code });
+      await storage.finishPendingAction(confirmationId, {
+        status: "failed",
+        error: { code, requiresReauth: Boolean(err.requiresReauth), retryable: Boolean(err.retryable) },
+      });
+      return {
+        success: false,
+        status: "failed",
+        tool: pending.tool,
+        action: pending.action,
+        message: err.userMessage || "The action failed and will not be retried automatically.",
+        error: {
+          code,
+          userMessage: err.userMessage || null,
+          retryable: Boolean(err.retryable),
+          requiresReauth: Boolean(err.requiresReauth),
+          authUrl: err.authUrl || null,
+        },
+      };
+    }
+  }
+
+  async function cancelAction(confirmationId) {
+    const result = await storage.cancelPendingAction(confirmationId);
+    if (result.status !== "cancelled") {
+      return {
+        success: false,
+        status: result.status,
+        message: result.status === "already_claimed"
+          ? "This action has already started and can no longer be cancelled."
+          : "Confirmation request not found or expired.",
+      };
+    }
+    return { success: true, status: "cancelled", message: `Action cancelled: ${result.action.title}` };
+  }
+
+  async function listPending() {
+    await storage.cleanExpired();
+    return (await storage.loadPendingActions()).filter(a => ["pending", "executing", "failed"].includes(a.status));
+  }
+
+  return { createPending, confirmAction, cancelAction, listPending };
 }
 
-/**
- * List all currently active (non-expired) pending actions.
- * Useful for the GET /pending endpoint and debugging.
- *
- * @returns {object[]}
- */
-export async function listPending() {
-  await cleanExpired();
-  const { loadPendingActions } = await import("../storage/pendingActionsStorage.js");
-  return await loadPendingActions();
-}
+const service = createConfirmationService();
+export const createPending = (...args) => service.createPending(...args);
+export const confirmAction = (...args) => service.confirmAction(...args);
+export const cancelAction = (...args) => service.cancelAction(...args);
+export const listPending = (...args) => service.listPending(...args);

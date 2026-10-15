@@ -126,8 +126,13 @@ export class RequestPipeline {
       const activeCandidate = fallbackManager.selectNextCandidate(candidates, failedKeys);
 
       if (!activeCandidate) {
-        if (lastError) throw lastError;
-        return;
+        diagnostics.error("RequestPipeline", "All provider candidates exhausted.", {
+          totalAttempted: failedKeys.size,
+          failedKeys: [...failedKeys],
+        });
+        const err = lastError || new Error("[Runtime Error] All available AI providers are currently down or degraded.");
+        err.code = "ALL_MODELS_FAILED";
+        throw err;
       }
 
       const providerKey = activeCandidate.provider;
@@ -178,11 +183,12 @@ export class RequestPipeline {
 
         if (yieldedAny) {
           // Chunks already sent to client — cannot switch providers mid-stream
-          // Terminate gracefully rather than throwing a mid-stream error when possible
-          diagnostics.warn("RequestPipeline", `Stream error after partial yield from ${activeCandidate.displayName}. Cannot fall back mid-stream. Terminating.`, {
+          // Yield safe termination message chunk so stream terminates gracefully
+          diagnostics.warn("RequestPipeline", `Stream error after partial yield from ${activeCandidate.displayName}. Cannot fall back mid-stream. Terminating gracefully.`, {
             error: err.message,
           });
-          throw err;
+          yield "\n\nSorry for the interruption. I wasn't able to finish generating that response. Please try again.";
+          return;
         }
 
         // No chunks yet — fallback is allowed

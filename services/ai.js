@@ -680,7 +680,7 @@ export async function extractMemory(userMessage) {
     return JSON.parse(cleaned);
   } catch (err) {
     console.log("\n❌ MEMORY PARSE ERROR:");
-    console.log(err);
+    console.error("[AI] Memory extraction failed", { code: err.code || "MEMORY_EXTRACTION_ERROR" });
     console.log("\nRAW RESPONSE:");
     console.log(response);
     return {};

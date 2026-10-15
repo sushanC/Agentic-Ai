@@ -62,8 +62,7 @@ export async function handleStreamChatService(message, res) {
           ? result.answer
           : { status: "waiting_input", error: "invalid payload" };
 
-      console.log("\n📧 Streaming __WAITING_INPUT__:");
-      console.log(JSON.stringify(waitingPayload, null, 2));
+      console.log("[streamService] Returning an email input request");
 
       res.setHeader("Content-Type", "text/plain");
       res.setHeader("Transfer-Encoding", "chunked");
@@ -93,30 +92,36 @@ export async function handleStreamChatService(message, res) {
 
   await addMessage("user", message);
 
-  console.log("\n💬 USER:");
-  console.log(message);
-
-  const stream = await askGroqStream(message);
-
-  const modelInfo = getLastModelUsed();
-  const timelinePayload = {
-    model: modelInfo.name,
-    modelName: modelInfo.displayName,
-    provider: modelInfo.provider,
-    steps: [
-      { name: modelInfo.displayName, status: "running", isModel: true }
-    ]
-  };
-  res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
 
   let fullResponse = "";
 
-  for await (const chunk of stream) {
-    const content = chunk.choices?.[0]?.delta?.content;
+  try {
+    const stream = await askGroqStream(message);
 
-    if (content) {
-      fullResponse += content;
-      res.write(content);
+    const modelInfo = getLastModelUsed();
+    const timelinePayload = {
+      model: modelInfo.name,
+      modelName: modelInfo.displayName,
+      provider: modelInfo.provider,
+      steps: [
+        { name: modelInfo.displayName, status: "running", isModel: true }
+      ]
+    };
+    res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
+
+    for await (const chunk of stream) {
+      const content = chunk.choices?.[0]?.delta?.content;
+
+      if (content) {
+        fullResponse += content;
+        res.write(content);
+      }
+    }
+  } catch (err) {
+    console.error("[streamService] Stream execution failed", { code: err.code || "STREAM_ERROR" });
+    if (!fullResponse || fullResponse.trim() === "") {
+      fullResponse = "Sorry for the inconvenience. I wasn't able to complete that request. Please try again.";
+      res.write(fullResponse);
     }
   }
 

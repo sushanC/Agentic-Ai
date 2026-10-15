@@ -59,8 +59,7 @@ export async function loadPDF(pdfPath) {
     text += pageText + "\n";
   }
 
-  console.log(`${pdfPath} -> ${text.length} chars`);
-  console.log(text.slice(0, 500));
+  console.log("[PDF Parser] Text extracted", { characterCount: text.length });
 
   if (text.trim().length < 100) {
     console.log("\n⚠️ Scanned PDF detected.");

@@ -139,7 +139,7 @@ export async function listen(options = {}) {
         try {
           const result = await whisperDaemonManager.transcribe(tempFile, { language, beamSize });
           if (result.text) {
-            console.log(`[STT Transcription Success] "${result.text}" (Lang: ${result.detected_language}, Prob: ${result.language_probability?.toFixed(2)}, Conf: ${result.confidence?.toFixed(2)}, Processing: ${result.processing_duration?.toFixed(2)}s)`);
+            console.log("[STT] Transcription completed", { characterCount: result.text?.length || 0, language: result.detected_language, processingSeconds: result.processing_duration });
           } else {
             console.log("[STT Transcription] No text transcribed or rejected by quality filter.");
           }

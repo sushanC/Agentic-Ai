@@ -66,7 +66,7 @@ export class VoicePipelineOptimizer {
           }
         }
       } catch (err) {
-        console.error("[VoicePipelineOptimizer] TTS synthesis error for sentence:", trimmed, err);
+        console.error("[VoicePipelineOptimizer] TTS synthesis failed", { code: err.code || "TTS_ERROR" });
       }
     };
 

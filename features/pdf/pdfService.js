@@ -224,7 +224,7 @@ export async function handlePDF(userMessage) {
       console.log("\n📄 PDF Loaded Successfully\n");
     } catch (err) {
       console.log("\nAI: Could not load PDF.\n");
-      console.error(err);
+      console.error("[PDF] Processing failed", { code: err.code || "PDF_PROCESSING_ERROR" });
     }
 
     return true;

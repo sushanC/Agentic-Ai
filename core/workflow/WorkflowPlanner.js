@@ -47,6 +47,8 @@ export class WorkflowPlanner {
       { pattern: /\b(add task|create task|new task)\b/i,                           capability: "task",     taskLabel: "Task creation"        },
       // Notes
       { pattern: /\b(save note|create note|take note|save as note)\b/i,            capability: "note",     taskLabel: "Note creation"        },
+      // Calendar
+      { pattern: /\b(schedule|calendar|meeting|appointment|event|reschedule|free slot|busy|availability|cancel event|delete event|add event|create event|find event|what.{0,10}calendar|my schedule|am i free|book a)\b/i, capability: "calendar", taskLabel: "Calendar operation" },
       // Summarise (must come after research to not shadow it)
       { pattern: /\b(summarize|summarise|give me a summary|tldr)\b/i,              capability: "chat",     taskLabel: "Summarisation"        },
       // Chat / default
@@ -68,6 +70,7 @@ export class WorkflowPlanner {
       /\badd it as a task\b/i,
       /\bsummarize (it|that)\b/i,
       /\bsummarise (it|that)\b/i,
+      /\band (email|message) (him|her|them|everyone)\b/i,
     ];
   }
 

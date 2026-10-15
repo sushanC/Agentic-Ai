@@ -22,7 +22,7 @@ export class GmailProvider extends BaseEmailProvider {
       throw err;
     }
 
-    console.log(`📧 [GMAIL PROVIDER] Sending email to: ${to}...`);
+    console.log("[GmailProvider] Sending email");
 
     try {
       const auth = await this.authManager.getAuthenticatedClient();
@@ -35,14 +35,14 @@ export class GmailProvider extends BaseEmailProvider {
         requestBody: { raw }
       });
 
-      console.log(`📧 [GMAIL PROVIDER] Email sent successfully. Message ID: ${res.data.id}`);
+      console.log("[GmailProvider] Email sent successfully");
       return {
         success: true,
         messageId: res.data.id
       };
 
     } catch (err) {
-      console.error(`❌ [GMAIL PROVIDER] Email sending failed: ${err.message}`);
+      console.error("[GmailProvider] Email send failed", { code: err.code || "GMAIL_SEND_ERROR" });
 
       const msg = err.message || String(err);
       const isReauthRequired =

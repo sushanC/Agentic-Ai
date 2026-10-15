@@ -3,6 +3,7 @@ import { CapabilityLifecycle } from "../capabilities/CapabilityLifecycle.js";
 import { NodeStatus } from "./WorkflowNode.js";
 import { WorkflowResult } from "./WorkflowResult.js";
 import { workflowDiagnostics } from "./WorkflowDiagnostics.js";
+import { ErrorNormalizer } from "../errors/ErrorNormalizer.js";
 
 /**
  * WorkflowExecutor.js
@@ -156,14 +157,25 @@ export class WorkflowExecutor {
       .filter(n => n.status === NodeStatus.COMPLETED || n.status === NodeStatus.FAILED);
     const terminalNode = orderedExecuted[orderedExecuted.length - 1] ?? null;
 
-    const terminalResult    = terminalNode ? wCtx.getNodeOutput(terminalNode.id) : null;
-    const overallSuccess    = failedNodes.length === 0 && completedNodes.length > 0 && terminalResult?.success !== false;
+    const terminalResult = terminalNode ? wCtx.getNodeOutput(terminalNode.id) : null;
+    const overallSuccess = failedNodes.length === 0 && completedNodes.length > 0 && terminalResult?.success !== false;
 
     // Aggregate executed steps from all completed and failed nodes
     const executedSteps = orderedExecuted.flatMap(n => {
       const out = wCtx.getNodeOutput(n.id);
       return out?.executedSteps ?? [{ name: n.task, status: n.status }];
     });
+
+    // Determine user-facing answer
+    let finalAnswer = terminalResult?.answer || terminalResult?.userMessage || null;
+
+    if (!overallSuccess && (!finalAnswer || typeof finalAnswer !== "string" || finalAnswer.trim() === "")) {
+      const normalized = ErrorNormalizer.normalize(terminalResult?.error || "CAPABILITY_FAILED", {
+        capability: terminalResult?.capability || terminalNode?.requiredCapability || "unknown",
+        tool: terminalResult?.tool || terminalNode?.task || "unknown",
+      });
+      finalAnswer = normalized.userMessage;
+    }
 
     return WorkflowResult.create({
       success:         overallSuccess,
@@ -172,8 +184,8 @@ export class WorkflowExecutor {
       failedNodes:     failedNodes.map(n => n.toJSON()),
       skippedNodes:    skippedNodes.map(n => n.toJSON()),
       outputs:         wCtx.getAllNodeOutputs(),
-      answer:          terminalResult?.answer ?? (terminalResult?.error ? String(terminalResult.error) : null),
-      capability:      terminalResult?.capability ?? "chat",
+      answer:          finalAnswer,
+      capability:      terminalResult?.capability ?? terminalNode?.requiredCapability ?? "chat",
       tool:            terminalResult?.tool ?? "chat",
       executedSteps,
       executionTimeMs,
@@ -183,6 +195,10 @@ export class WorkflowExecutor {
         failedCount:     failedNodes.length,
         skippedCount:    skippedNodes.length,
         contextSnapshot: wCtx.toSnapshot(),
+      },
+      metadata: {
+        ...(terminalResult?.metadata || {}),
+        error: !overallSuccess ? (terminalResult?.error || "CAPABILITY_FAILED") : null,
       },
     });
   }

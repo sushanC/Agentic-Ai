@@ -394,7 +394,7 @@ Include breaks.
       const plan = await fs.readFile("./day_plan.txt", "utf-8");
 
       console.log("\n📅 Today's Plan:\n");
-      console.log(plan);
+      console.log("[Tasks] Day plan generated", { characterCount: typeof plan === "string" ? plan.length : 0 });
       console.log();
     } catch {
       console.log("\nAI: No plan found.\n");

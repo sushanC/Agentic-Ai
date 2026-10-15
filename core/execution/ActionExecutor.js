@@ -22,12 +22,10 @@ export async function executeActions(plan) {
   const steps = [];
   results.steps = steps;
 
-  console.log("\n⚙️ EXECUTING PLAN (Tool Registry Framework):");
-  console.log(JSON.stringify(plan, null, 2));
+  console.log("[ActionExecutor] Executing tool plan", { actionCount: plan.actions.length });
 
   for (const action of plan.actions) {
-    console.log("\n▶ ACTION:");
-    console.log(action);
+    console.log("[ActionExecutor] Running action", { tool: action.tool });
 
     steps.push({ name: action.tool, status: "completed" });
 
@@ -55,7 +53,7 @@ export async function executeActions(plan) {
 
       results.push(result);
     } catch (err) {
-      console.error(`Error executing tool "${action.tool}":`, err);
+      console.error("[ActionExecutor] Tool execution failed", { tool: action.tool, code: err.code || "EXECUTION_ERROR" });
       const lastStep = steps[steps.length - 1];
       if (lastStep) lastStep.status = "failed";
       results.push(`❌ Action failed: ${action.tool}`);

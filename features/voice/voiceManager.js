@@ -215,7 +215,7 @@ class VoiceManager {
         return;
       }
 
-      console.log(`[VoiceManager] Recognized Speech: "${text}"`);
+      console.log("[VoiceManager] Speech recognized", { characterCount: text?.length || 0 });
 
       // Set physical ALSA speaker output device in queue dynamically
       if (this.settings?.speakerSelection) {

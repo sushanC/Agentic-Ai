@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
+import { createLocalApiGuard, isAllowedLocalOrigin, logSafeError, safeErrorCode } from "./services/httpSecurity.js";
 
 import {
   getModelRegistry,
@@ -103,11 +104,21 @@ import {
 
 const app = express();
 
+const configuredOrigins = (process.env.SAMGPT_ALLOWED_ORIGINS || "")
+  .split(",").map(value => value.trim()).filter(Boolean);
+app.use(createLocalApiGuard(configuredOrigins));
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, false);
+    return callback(null, isAllowedLocalOrigin(origin, configuredOrigins) ? origin : false);
+  },
+  optionsSuccessStatus: 204,
+}));
+
 const upload = multer({
   dest: "uploads/"
 });
 
-app.use(cors());
 app.use(express.json());
 
 // ============================================================
@@ -180,7 +191,7 @@ app.get(
 
     } catch (err) {
 
-      console.error(err);
+      logSafeError("Stats request failed", err);
 
       res.status(500).json({
         error: "Failed to load stats"
@@ -231,7 +242,7 @@ app.get(
 
     } catch (err) {
 
-      console.error(err);
+      logSafeError("Backup request failed", err);
 
       res.status(500).json({
         error: "Backup failed"
@@ -298,11 +309,9 @@ app.post(
 
     } catch (err) {
 
-      console.error(err);
+      logSafeError("Restore request failed", err);
 
-      res.status(500).json({
-        error: "Restore failed: " + err.message
-      });
+      res.status(500).json({ error: "Restore failed." });
     }
   }
 );
@@ -338,7 +347,7 @@ app.post(
 
     } catch (err) {
 
-      console.error("CONFIRM ERROR:", err);
+      logSafeError("Confirmation request failed", err);
 
       res.status(500).json({
         success: false,
@@ -359,7 +368,7 @@ app.get(
       const status = await getGmailStatus();
       res.json(status);
     } catch (err) {
-      console.error("Gmail status error:", err);
+      logSafeError("Gmail status request failed", err);
       res.status(500).json({ error: "Failed to get Gmail status." });
     }
   }
@@ -375,7 +384,7 @@ app.get(
       }
       res.redirect(authUrl);
     } catch (err) {
-      console.error("Gmail auth redirect error:", err);
+      logSafeError("Gmail auth redirect failed", err);
       res.status(500).send("Failed to initiate Gmail authorization.");
     }
   }
@@ -385,11 +394,11 @@ app.get(
   "/gmail/callback",
   async (req, res) => {
     try {
-      const { code } = req.query;
-      if (!code) {
-        return res.status(400).send("Authorization code is missing.");
+      const { code, state } = req.query;
+      if (typeof code !== "string" || !code || typeof state !== "string" || !state) {
+        return res.status(400).send("Authorization response is invalid or expired. Start linking Gmail again.");
       }
-      await exchangeCodeForTokens(code);
+      await exchangeCodeForTokens(code, state);
       res.send(`
         <html>
           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #1e1e2e; color: #cdd6f4;">
@@ -402,8 +411,87 @@ app.get(
         </html>
       `);
     } catch (err) {
-      console.error("Gmail callback error:", err);
-      res.status(500).send("Failed to complete Gmail authorization: " + err.message);
+      logSafeError("Gmail OAuth callback failed", err);
+      res.status(err.code === "INVALID_OAUTH_STATE" ? 400 : 500)
+        .send(err.code === "INVALID_OAUTH_STATE" ? "Authorization expired or could not be verified. Start linking Gmail again." : "Failed to complete Gmail authorization.");
+    }
+  }
+);
+
+// ============================================================
+// Calendar System V1 Routes
+// ============================================================
+
+// GET /calendar/status
+// Returns Google Calendar authorization and scope status.
+app.get(
+  "/calendar/status",
+  async (req, res) => {
+    try {
+      const { googleAuthManager } = await import("./core/google/GoogleAuthManager.js");
+      const status = await googleAuthManager.getCalendarStatus();
+      res.json(status);
+    } catch (err) {
+      logSafeError("Calendar status request failed", err);
+      res.status(500).json({ error: "Failed to get Calendar status." });
+    }
+  }
+);
+
+// GET /google/auth?service=calendar
+// Redirects to the Google OAuth2 consent screen for combined Gmail+Calendar scopes.
+// Existing /gmail/auth route is UNCHANGED and still redirects to Gmail-only scope.
+app.get(
+  "/google/auth",
+  async (req, res) => {
+    try {
+      const { googleAuthManager } = await import("./core/google/GoogleAuthManager.js");
+      const service = (req.query.service || "calendar").toLowerCase();
+      let authUrl;
+      if (service === "combined" || service === "all") {
+        authUrl = googleAuthManager.getCombinedAuthUrl();
+      } else {
+        authUrl = googleAuthManager.getCalendarAuthUrl();
+      }
+      if (!authUrl) {
+        return res.status(400).send("Google OAuth2 credentials are not configured in your .env file.");
+      }
+      res.redirect(authUrl);
+    } catch (err) {
+      logSafeError("Google auth redirect failed", err);
+      res.status(500).send("Failed to initiate Google authorization.");
+    }
+  }
+);
+
+// GET /google/callback
+// Handles OAuth2 callback for Calendar (and combined) auth flows.
+// Shares the same token file as /gmail/callback — unified Google token.
+app.get(
+  "/google/callback",
+  async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      if (typeof code !== "string" || !code || typeof state !== "string" || !state) {
+        return res.status(400).send("Authorization response is invalid or expired. Start linking Google again.");
+      }
+      const { googleAuthManager } = await import("./core/google/GoogleAuthManager.js");
+      await googleAuthManager.exchangeCodeForTokens(code, state, ["calendar", "combined"]);
+      res.send(`
+        <html>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #1e1e2e; color: #cdd6f4;">
+            <div style="background-color: #313244; padding: 30px; border-radius: 10px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+              <h2 style="color: #a6e3a1;">✅ Google Calendar Linked Successfully!</h2>
+              <p>samGPT can now manage your Google Calendar — schedule meetings, check availability, and more.</p>
+              <p style="color: #a6adc8; font-size: 14px;">You can close this tab and return to the application.</p>
+            </div>
+          </body>
+        </html>
+      `);
+    } catch (err) {
+      logSafeError("Google OAuth callback failed", err);
+      res.status(err.code === "INVALID_OAUTH_STATE" ? 400 : 500)
+        .send(err.code === "INVALID_OAUTH_STATE" ? "Authorization expired or could not be verified. Start linking Google again." : "Failed to complete Google authorization.");
     }
   }
 );
@@ -434,7 +522,7 @@ app.post(
 
     } catch (err) {
 
-      console.error("CANCEL ERROR:", err);
+      logSafeError("Cancel request failed", err);
 
       res.status(500).json({
         success: false,
@@ -461,7 +549,7 @@ app.get(
 
     } catch (err) {
 
-      console.error("PENDING LIST ERROR:", err);
+      logSafeError("Pending action request failed", err);
 
       res.status(500).json({
         error: "Failed to load pending actions."
@@ -525,10 +613,9 @@ app.post(
       // Validate the extracted email
       const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!EMAIL_REGEX.test(providedEmail)) {
-        console.log(`\n📧 Validation Failed — invalid input: "${providedEmail}"`);
         return res.status(400).json({
           success: false,
-          message: `"${providedEmail}" doesn't look like a valid email address. Please provide a valid email (e.g. name@example.com).`
+          message: "That doesn't look like a valid email address. Please provide a valid email address."
         });
       }
 
@@ -541,7 +628,6 @@ app.post(
           savedAt: new Date().toISOString()
         };
         await saveMemory(memory);
-        console.log(`\n📧 Contact Saved: "${draft.recipientName}" → ${providedEmail}`);
       }
 
       // Remove the old WAITING_FOR_INPUT pending record
@@ -598,10 +684,10 @@ app.post(
       res.end();
 
     } catch (err) {
-      console.error("EMAIL PROVIDE-INPUT ERROR:", err);
+      logSafeError("Email input request failed", err);
       res.status(500).json({
         success: false,
-        message: "Internal error processing email input: " + err.message
+        message: "Internal error processing email input."
       });
     }
   }
@@ -633,7 +719,7 @@ app.get(
       });
       res.json(enriched);
     } catch (err) {
-      console.error("MODELS ERROR:", err);
+      logSafeError("Model registry request failed", err);
       res.status(500).json({ error: "Failed to load model registry" });
     }
   }
@@ -690,7 +776,7 @@ app.get(
       const healthMap = Object.fromEntries(results);
       res.json(healthMap);
     } catch (err) {
-      console.error("MODELS HEALTH ERROR:", err);
+      logSafeError("Model health request failed", err);
       res.status(500).json({ error: "Health check failed" });
     }
   }
@@ -754,10 +840,11 @@ app.post(
         response: (response || "").slice(0, 100)
       });
     } catch (err) {
-      console.error(`MODEL TEST ERROR [${key}]:`, err.message);
+      logSafeError("Model test failed", err);
       res.json({
         success: false,
-        error: err.message,
+        error: "The model test failed.",
+        code: safeErrorCode(err),
         provider: null,
         latency: null,
         tokens: 0
@@ -793,7 +880,7 @@ app.get(
         effective
       });
     } catch (err) {
-      console.error("CAPABILITIES ERROR:", err);
+      logSafeError("Capabilities request failed", err);
       res.status(500).json({ error: "Failed to load capability mapping" });
     }
   }
@@ -811,7 +898,7 @@ app.get(
       const devices = await getAudioDevices();
       res.json(devices);
     } catch (err) {
-      console.error("AUDIO DEVICES ERROR:", err);
+      logSafeError("Audio devices request failed", err);
       res.status(500).json({ error: "Failed to query audio hardware" });
     }
   }
@@ -823,6 +910,7 @@ app.get(
 
 app.listen(
   3001,
+  "127.0.0.1",
   () => {
     console.log("🚀 Personal Agent API running on port 3001");
     console.log("📁 Storage: ~/.personal-agent/");
@@ -834,13 +922,13 @@ app.listen(
 // ============================================================
 
 // Initialize voice manager
-voiceManager.init().catch(err => console.error("Failed to init voice manager:", err));
+voiceManager.init().catch(err => logSafeError("Voice manager initialization failed", err));
 
 if (typeof process.on === "function") {
   process.on("message", async (msg) => {
     if (!msg || !msg.type) return;
 
-    console.log("[Backend IPC] Received message:", msg);
+    console.log("[Backend IPC] Received voice command", { type: msg.type });
 
     try {
       switch (msg.type) {
@@ -875,7 +963,7 @@ if (typeof process.on === "function") {
           break;
       }
     } catch (err) {
-      console.error("[Backend IPC] Error handling process message:", err);
+      logSafeError("Backend voice command failed", err);
     }
   });
 }
@@ -894,7 +982,7 @@ app.get(
       const history = await loadDesktopHistory();
       res.json(history);
     } catch (err) {
-      console.error("DESKTOP HISTORY ERROR:", err);
+      logSafeError("Desktop history request failed", err);
       res.status(500).json({ error: "Failed to load desktop history" });
     }
   }
@@ -928,7 +1016,7 @@ app.get(
         timestamp: new Date().toISOString()
       });
     } catch (err) {
-      console.error("DESKTOP SYSTEM-STATUS ERROR:", err);
+      logSafeError("Desktop system status request failed", err);
       res.status(500).json({ error: "Failed to retrieve system status" });
     }
   }
@@ -961,7 +1049,7 @@ app.get(
         }
       });
     } catch (err) {
-      console.error("DESKTOP SCREENSHOT SERVE ERROR:", err);
+      logSafeError("Desktop screenshot request failed", err);
       res.status(500).json({ error: "Failed to serve screenshot" });
     }
   }
