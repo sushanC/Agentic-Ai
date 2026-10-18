@@ -1,7 +1,7 @@
 import { BaseMemoryStore } from "./BaseMemoryStore.js";
 import { MemoryObject } from "../model/MemoryObject.js";
 import { MEMORY_CONFIG } from "../config/MemoryConfig.js";
-import { loadHistory, saveHistory } from "../../../storage/historyStorage.js";
+import { loadHistory, saveHistory, updateHistory } from "../../../storage/historyStorage.js";
 import { loadSummary, saveSummary } from "../../../storage/summaryStorage.js";
 
 /**
@@ -15,9 +15,7 @@ export class ConversationMemoryStore extends BaseMemoryStore {
   }
 
   async store(message) {
-    const history = await loadHistory();
-    history.push(message);
-    await saveHistory(history);
+    await updateHistory(history => [...history, message]);
 
     return MemoryObject.create({
       type: "conversation",

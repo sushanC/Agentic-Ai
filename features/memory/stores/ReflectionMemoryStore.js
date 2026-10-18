@@ -21,14 +21,9 @@ export class ReflectionMemoryStore extends BaseMemoryStore {
   }
 
   async initialize() {
-    if (this.initialized) return;
     const list = await storeFile.read();
     this.reflections = list.map(item => MemoryObject.create({ ...item, type: "reflection" }));
     this.initialized = true;
-  }
-
-  async _syncToDisk() {
-    await storeFile.write(this.reflections);
   }
 
   async store(item) {
@@ -40,8 +35,8 @@ export class ReflectionMemoryStore extends BaseMemoryStore {
       importance: item.importance || 0.80,
     });
 
+    await storeFile.update(current => [...current, obj]);
     this.reflections.push(obj);
-    await this._syncToDisk();
     return obj;
   }
 
@@ -52,13 +47,14 @@ export class ReflectionMemoryStore extends BaseMemoryStore {
 
   async delete(id) {
     await this.initialize();
-    const idx = this.reflections.findIndex(r => r.id === id);
-    if (idx !== -1) {
-      this.reflections.splice(idx, 1);
-      await this._syncToDisk();
-      return true;
-    }
-    return false;
+    let deleted = false;
+    await storeFile.update(current => {
+      const next = current.filter(item => item.id !== id);
+      deleted = next.length !== current.length;
+      return next;
+    });
+    this.reflections = this.reflections.filter(item => item.id !== id);
+    return deleted;
   }
 
   async search(filterFn) {
@@ -68,7 +64,7 @@ export class ReflectionMemoryStore extends BaseMemoryStore {
 
   async clear() {
     this.reflections = [];
-    await this._syncToDisk();
+    await storeFile.write([]);
   }
 
   async getAll() {

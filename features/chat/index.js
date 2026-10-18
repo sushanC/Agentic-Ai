@@ -1,5 +1,5 @@
 export { default as chatRoutes } from "./chatRoutes.js";
-export { loadHistory, saveHistory } from "./chatStorage.js";
+export { loadHistory, saveHistory, updateHistory } from "./chatStorage.js";
 export { addMessage, getRecentHistory } from "./conversationService.js";
 export { handleStandardChat, loadChatHistory } from "./chatService.js";
 export { handleStreamChatService } from "./streamService.js";

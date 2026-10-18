@@ -23,8 +23,8 @@ export class RelationshipGraph {
   }
 
   async initialize() {
-    if (this.initialized) return;
     const json = await graphFile.read();
+    this.graph.clear();
     for (const [subject, edges] of Object.entries(json)) {
       const edgeSet = new Set();
       for (const edge of edges) {
@@ -33,14 +33,6 @@ export class RelationshipGraph {
       this.graph.set(subject, edgeSet);
     }
     this.initialized = true;
-  }
-
-  async _syncToDisk() {
-    const json = {};
-    for (const [subject, edgeSet] of this.graph.entries()) {
-      json[subject] = Array.from(edgeSet);
-    }
-    await graphFile.write(json);
   }
 
   /**
@@ -58,24 +50,15 @@ export class RelationshipGraph {
     const o = String(object).toLowerCase().trim();
     const r = String(relation).toLowerCase().trim();
 
-    if (!this.graph.has(s)) {
-      this.graph.set(s, new Set());
-    }
-
-    const set = this.graph.get(s);
-    // Check for existing edge
-    const exists = Array.from(set).some(e => e.target === o && e.relation === r);
-    if (!exists) {
-      const edge = { target: o, relation: r };
-      set.add(edge);
-      try {
-        await this._syncToDisk();
-      } catch (error) {
-        set.delete(edge);
-        if (set.size === 0) this.graph.delete(s);
-        throw error;
-      }
-    }
+    let updated;
+    await graphFile.update(json => {
+      const edges = (json[s] || []).map(edge => typeof edge === "string" ? { target: edge, relation: "related_to" } : edge);
+      if (!edges.some(edge => edge.target === o && edge.relation === r)) edges.push({ target: o, relation: r });
+      updated = { ...json, [s]: edges };
+      return updated;
+    });
+    this.graph.clear();
+    for (const [subject, edges] of Object.entries(updated)) this.graph.set(subject, new Set(edges));
   }
 
   async removeRelationship(subject, object, relation = "related_to") {
@@ -84,20 +67,23 @@ export class RelationshipGraph {
     const s = String(subject).toLowerCase().trim();
     const o = String(object).toLowerCase().trim();
     const r = String(relation).toLowerCase().trim();
-    const edges = this.graph.get(s);
-    if (!edges) return false;
-    const edge = Array.from(edges).find(item => item.target === o && item.relation === r);
-    if (!edge) return false;
-    edges.delete(edge);
-    if (edges.size === 0) this.graph.delete(s);
-    try {
-      await this._syncToDisk();
-    } catch (error) {
-      if (!this.graph.has(s)) this.graph.set(s, edges);
-      edges.add(edge);
-      throw error;
-    }
-    return true;
+    let removed = false;
+    let updated;
+    await graphFile.update(json => {
+      const edges = (json[s] || []).map(edge => typeof edge === "string" ? { target: edge, relation: "related_to" } : edge);
+      const nextEdges = edges.filter(edge => {
+        const matches = edge.target === o && edge.relation === r;
+        if (matches) removed = true;
+        return !matches;
+      });
+      updated = { ...json };
+      if (nextEdges.length) updated[s] = nextEdges;
+      else delete updated[s];
+      return updated;
+    });
+    this.graph.clear();
+    for (const [subject, edges] of Object.entries(updated)) this.graph.set(subject, new Set(edges));
+    return removed;
   }
 
   /**

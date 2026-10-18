@@ -1,10 +1,17 @@
 import path from "path";
+import os from "os";
 import { getStoragePath } from "./storagePath.js";
 import { readJsonFile, withJsonFileLock, writeJsonFile } from "./jsonFile.js";
 
 export function createPendingActionsStorage(filePath = getStoragePath("pendingActions.json")) {
   const pendingFile = path.resolve(filePath);
   const activeClaims = new Set();
+  async function claimIsLive(action) {
+    if (activeClaims.has(action.id)) return true;
+    if (action.executionHost !== os.hostname() || !Number.isSafeInteger(action.executionPid)) return false;
+    try { process.kill(action.executionPid, 0); return true; }
+    catch (error) { return error.code === "EPERM"; }
+  }
   async function readActions() {
     const actions = await readJsonFile(pendingFile, []);
     if (!Array.isArray(actions)) {
@@ -28,15 +35,17 @@ export function createPendingActionsStorage(filePath = getStoragePath("pendingAc
   async function addPendingAction(action) {
     return withJsonFileLock(pendingFile, async () => {
     const now = new Date();
-    const actions = (await readActions()).filter(a => {
-      if (a.status === "executing" && !activeClaims.has(a.id)) {
+    const actions = [];
+    for (const a of await readActions()) {
+      if (a.status === "executing" && !(await claimIsLive(a))) {
         a.status = "outcome_unknown";
         a.recoveredAt = now.toISOString();
-        return true;
+        actions.push(a);
+        continue;
       }
       const expired = !a.expiresAt || Date.parse(a.expiresAt) <= now.getTime();
-      return !expired || !["pending", "completed", "failed"].includes(a.status);
-    });
+      if (!expired || !["pending", "completed", "failed"].includes(a.status)) actions.push(a);
+    }
     actions.push(action);
     await writeActions(actions);
     });
@@ -61,7 +70,7 @@ export function createPendingActionsStorage(filePath = getStoragePath("pendingAc
     if (index < 0) return { status: "missing", action: null };
 
     const action = actions[index];
-    if (action.status === "executing" && !activeClaims.has(id)) {
+    if (action.status === "executing" && !(await claimIsLive(action))) {
       const recovered = { ...action, status: "outcome_unknown", recoveredAt: now.toISOString() };
       actions[index] = recovered;
       await writeActions(actions);
@@ -76,7 +85,7 @@ export function createPendingActionsStorage(filePath = getStoragePath("pendingAc
       return { status: "expired", action: null };
     }
 
-    const claimed = { ...action, status: "executing", claimedAt: now.toISOString() };
+    const claimed = { ...action, status: "executing", claimedAt: now.toISOString(), executionPid: process.pid, executionHost: os.hostname() };
     actions[index] = claimed;
     await writeActions(actions);
     activeClaims.add(id);
@@ -97,6 +106,8 @@ export function createPendingActionsStorage(filePath = getStoragePath("pendingAc
       ...actions[index],
       status,
       finishedAt: new Date().toISOString(),
+      executionPid: undefined,
+      executionHost: undefined,
       ...(error ? { executionError: error } : {}),
     };
     await writeActions(actions);
@@ -130,7 +141,7 @@ export function createPendingActionsStorage(filePath = getStoragePath("pendingAc
       const index = actions.findIndex(a => a.id === id);
       if (index < 0) return null;
       const action = actions[index];
-      if (action.status === "executing" && !activeClaims.has(id)) {
+      if (action.status === "executing" && !(await claimIsLive(action))) {
         const recovered = { ...action, status: "outcome_unknown", recoveredAt: new Date().toISOString() };
         actions[index] = recovered;
         await writeActions(actions);
@@ -151,21 +162,23 @@ export function createPendingActionsStorage(filePath = getStoragePath("pendingAc
     const actions = await readActions();
     const now = new Date();
     let changed = false;
-    const retained = actions.filter(action => {
+    const retained = [];
+    for (const action of actions) {
       const expired = !action.expiresAt || Date.parse(action.expiresAt) <= now.getTime();
-      if (action.status === "executing" && !activeClaims.has(action.id)) {
+      if (action.status === "executing" && !(await claimIsLive(action))) {
         action.status = "outcome_unknown";
         action.recoveredAt = now.toISOString();
         changed = true;
-        return true;
+        retained.push(action);
+        continue;
       }
-      if (!expired) return true;
+      if (!expired) { retained.push(action); continue; }
       if (action.status === "pending" || action.status === "completed" || action.status === "failed") {
         changed = true;
-        return false;
+        continue;
       }
-      return true;
-    });
+      retained.push(action);
+    }
     if (changed) await writeActions(retained);
     return retained.filter(a => a.status === "pending").length;
     });

@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import { writeTextFileAtomic } from "../../storage/jsonFile.js";
 
 import {
   loadTasks,
@@ -277,7 +278,7 @@ Explain each task in 5 words or less.
 
     const sortedTasks = await askAI(prompt);
 
-    await fs.writeFile("./sorted_tasks.txt", sortedTasks);
+    await writeTextFileAtomic("./sorted_tasks.txt", sortedTasks);
 
     console.log("\n📋 Sorted Tasks:\n");
     console.log(sortedTasks);
@@ -355,7 +356,7 @@ Include breaks.
 
     const dayPlan = await askAI(prompt);
 
-    await fs.writeFile("./day_plan.txt", dayPlan);
+    await writeTextFileAtomic("./day_plan.txt", dayPlan);
 
     console.log("\n📅 Today's Plan:\n");
     console.log(dayPlan);

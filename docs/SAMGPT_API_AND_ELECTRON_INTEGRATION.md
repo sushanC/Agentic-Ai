@@ -50,8 +50,8 @@ flowchart LR
 
 ## Persistence and settings
 
-`storage/storagePath.js` creates `~/.personal-agent/` and supplies paths. Core JSON persistence now uses `storage/jsonFile.js` for atomic replacement, shape checks and process-local locking. PDF upload files are staged in current-working-directory-relative `uploads/`; there is no database engine or schema migration system. Locks do not coordinate separate server processes.
+`storage/storagePath.js` creates `~/.personal-agent/` and supplies paths. Core JSON persistence uses `storage/jsonFile.js` for atomic replacement, shape checks and same-host local cross-process coordination. Restore uses a staged versioned journal and startup rollback recovery. PDF upload files are staged in current-working-directory-relative `uploads/`; there is no database engine or schema migration system. See storage docs for filesystem and compatibility-save limitations.
 
-`/backup` exports tasks, notes, semantic memory, history, settings and stats. It excludes pending actions, Google tokens, projects/preferences and PDF data/files, among other stores. `/restore` validates the full supported backup shape and size/depth before writes; it applies files sequentially and attempts reverse-order rollback on failure, so multi-file restore remains best-effort rather than crash-atomic. Backups contain personal content. See [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md) for the verified inventory and limits.
+`/backup` exports tasks, notes, semantic memory, history, settings and stats. It excludes pending actions, Google tokens, projects/preferences and PDF data/files, among other stores. `/restore` validates shape and size/depth, stages private snapshots and incoming data, verifies replacements, and rolls back incomplete work on startup. It is recoverable after process crashes but not power loss or multi-file atomic. Backups contain personal content. See [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md) for the verified inventory and limits.
 
 See [security audit](SAMGPT_SECURITY_AND_RELIABILITY_AUDIT.md).

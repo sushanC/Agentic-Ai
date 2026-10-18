@@ -10,7 +10,7 @@
 
 import {
   loadHistory,
-  saveHistory
+  updateHistory
 } from "../features/chat/index.js";
 
 import {
@@ -94,9 +94,7 @@ export async function updateSummary() {
 
   await saveSummary({ summary });
 
-  await saveHistory(
-    history.slice(-20)
-  );
+  await updateHistory(current => current.length >= 50 ? current.slice(-20) : current);
 
   console.log("\n📝 SUMMARY UPDATED");
 }

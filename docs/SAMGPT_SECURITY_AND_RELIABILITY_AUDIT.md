@@ -129,3 +129,9 @@ The normalization and chat boxes represent alternative boundaries, not one fully
 5. Verify a future Electron/browser client contract, especially origin and confirmation behavior.
 
 See [test coverage](SAMGPT_TEST_COVERAGE.md) for verification limits.
+
+## Phase 5 storage integrity update
+
+Built-in JSON store reads and mutations now coordinate across local processes with exclusive per-directory and per-file lock directories, bounded waits and dead same-host owner recovery. Chat append/trim, task/note/PDF memory updates, persistent memory mutations, token merging, confirmation transitions and usage counters use the shared operation path. Full-replacement compatibility APIs and external read/mutate/save sequences remain unsafe when based on stale snapshots. The lock strategy is for cooperating processes on one host and a local filesystem; network/synchronized filesystems and multi-host use are unsupported.
+
+Restore validates before touching live files, stages data and snapshots under private permissions, records a versioned state manifest, verifies every replacement, and rolls back incomplete restores before CLI/server storage use. Missing/corrupt snapshots or journal metadata stop startup. This covers process crashes on the tested Linux/Node 22 filesystem; directory-entry sync and power-loss guarantees are not provided. See [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md) for the state machine and remaining unsafe paths.

@@ -23,8 +23,8 @@ export class ProjectMemoryStore extends BaseMemoryStore {
   }
 
   async initialize() {
-    if (this.initialized) return;
     const json = await storeFile.read();
+    this.projects.clear();
     for (const [name, projData] of Object.entries(json)) {
       const obj = MemoryObject.create({
         id: `proj_${name}`,
@@ -36,15 +36,6 @@ export class ProjectMemoryStore extends BaseMemoryStore {
       this.projects.set(name, obj);
     }
     this.initialized = true;
-  }
-
-  async _syncToDisk() {
-    const json = {};
-    for (const [name, obj] of this.projects.entries()) {
-      const { name: _, ...rest } = obj.content;
-      json[name] = rest;
-    }
-    await storeFile.write(json);
   }
 
   async store(item) {
@@ -60,8 +51,9 @@ export class ProjectMemoryStore extends BaseMemoryStore {
       updatedAt: Date.now(),
     });
 
+    const { name: _ignored, ...storedData } = obj.content;
+    await storeFile.update(json => ({ ...json, [name]: storedData }));
     this.projects.set(name, obj);
-    await this._syncToDisk();
     return obj;
   }
 
@@ -72,8 +64,14 @@ export class ProjectMemoryStore extends BaseMemoryStore {
 
   async delete(name) {
     await this.initialize();
-    const deleted = this.projects.delete(name.replace(/^proj_/, ""));
-    if (deleted) await this._syncToDisk();
+    const cleanName = name.replace(/^proj_/, "");
+    let deleted = false;
+    await storeFile.update(json => {
+      deleted = Object.hasOwn(json, cleanName);
+      const { [cleanName]: _removed, ...remaining } = json;
+      return remaining;
+    });
+    this.projects.delete(cleanName);
     return deleted;
   }
 
@@ -84,7 +82,7 @@ export class ProjectMemoryStore extends BaseMemoryStore {
 
   async clear() {
     this.projects.clear();
-    await this._syncToDisk();
+    await storeFile.write({});
   }
 
   async getAll() {

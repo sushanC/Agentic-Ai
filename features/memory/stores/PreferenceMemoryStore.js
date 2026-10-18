@@ -22,8 +22,8 @@ export class PreferenceMemoryStore extends BaseMemoryStore {
   }
 
   async initialize() {
-    if (this.initialized) return;
     const json = await storeFile.read();
+    this.prefs.clear();
     for (const [key, value] of Object.entries(json)) {
       const obj = MemoryObject.create({
         id: `pref_${key}`,
@@ -35,14 +35,6 @@ export class PreferenceMemoryStore extends BaseMemoryStore {
       this.prefs.set(key, obj);
     }
     this.initialized = true;
-  }
-
-  async _syncToDisk() {
-    const json = {};
-    for (const [key, obj] of this.prefs.entries()) {
-      json[key] = obj.content.value;
-    }
-    await storeFile.write(json);
   }
 
   async store(item) {
@@ -61,8 +53,8 @@ export class PreferenceMemoryStore extends BaseMemoryStore {
       updatedAt: Date.now(),
     });
 
+    await storeFile.update(json => ({ ...json, [key]: value }));
     this.prefs.set(key, obj);
-    await this._syncToDisk();
     return obj;
   }
 
@@ -73,8 +65,14 @@ export class PreferenceMemoryStore extends BaseMemoryStore {
 
   async delete(key) {
     await this.initialize();
-    const deleted = this.prefs.delete(key.replace(/^pref_/, ""));
-    if (deleted) await this._syncToDisk();
+    const cleanKey = key.replace(/^pref_/, "");
+    let deleted = false;
+    await storeFile.update(json => {
+      deleted = Object.hasOwn(json, cleanKey);
+      const { [cleanKey]: _removed, ...remaining } = json;
+      return remaining;
+    });
+    this.prefs.delete(cleanKey);
     return deleted;
   }
 
@@ -85,7 +83,7 @@ export class PreferenceMemoryStore extends BaseMemoryStore {
 
   async clear() {
     this.prefs.clear();
-    await this._syncToDisk();
+    await storeFile.write({});
   }
 
   async getAll() {

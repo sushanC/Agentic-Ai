@@ -83,6 +83,9 @@ test("a claimed action from a prior process becomes outcome-unknown and cannot e
     const originalProcessStore = createPendingActionsStorage(file);
     await originalProcessStore.addPendingAction(makePending("uncertain"));
     assert.equal((await originalProcessStore.claimPendingAction("uncertain")).status, "claimed");
+    const persisted = await originalProcessStore.loadPendingActions();
+    persisted[0].executionPid = 2_147_483_647;
+    await originalProcessStore.savePendingActions(persisted);
 
     const restartedProcessStore = createPendingActionsStorage(file);
     await restartedProcessStore.cleanExpired();
@@ -120,7 +123,7 @@ test("expiry cleanup removes expired pending entries but retains live claims and
   });
 });
 
-function makeBackupFixture() {
+function makeBackupFixture(dir) {
   const data = {
     tasks: [{ id: 1 }], notes: [{ id: 2 }], memory: { name: "old" },
     history: [{ role: "user" }], settings: { model: "auto" }, stats: { messages: 1 },
@@ -131,11 +134,12 @@ function makeBackupFixture() {
     const saveName = key === "memory" ? "replaceMemory" : `save${key[0].toUpperCase()}${key.slice(1)}`;
     storage[saveName] = async value => { data[key] = structuredClone(value); };
   }
-  return { data, service: createBackupService(storage) };
+  return { data, service: createBackupService(storage, { journalDirectory: path.join(dir, "journal") }) };
 }
 
 test("backup export omits credentials and restore validates before changing any store", async () => {
-  const { data, service } = makeBackupFixture();
+  await withTempDir(async dir => {
+  const { data, service } = makeBackupFixture(dir);
   const backup = await service.createBackup();
   assert.deepEqual(backup.memory, { name: "old" });
   assert.equal("gmail_token" in backup, false);
@@ -144,10 +148,12 @@ test("backup export omits credentials and restore validates before changing any 
   await assert.rejects(service.restoreBackup({ tasks: "not-an-array", memory: { safe: true } }), err => err.code === "BACKUP_INVALID");
   assert.deepEqual(data.tasks, [{ id: 1 }]);
   assert.deepEqual(data.memory, { name: "old" });
+  });
 });
 
 test("restore rolls back files already written when a later store fails", async () => {
-  const { data } = makeBackupFixture();
+  await withTempDir(async dir => {
+  const { data } = makeBackupFixture(dir);
   let failNotes = true;
   const service = createBackupService({
     loadTasks: baseStorageLoad(data, "tasks"),
@@ -165,7 +171,7 @@ test("restore rolls back files already written when a later store fails", async 
     saveSettings: async value => { data.settings = structuredClone(value); },
     loadStats: baseStorageLoad(data, "stats"),
     saveStats: async value => { data.stats = structuredClone(value); },
-  });
+  }, { journalDirectory: path.join(dir, "journal") });
   await assert.rejects(service.restoreBackup({ version: "1.0", tasks: [{ id: 11 }], notes: [{ id: 22 }] }), err => {
     assert.equal(err.code, "BACKUP_RESTORE_FAILED");
     assert.equal(err.rollbackComplete, true);
@@ -173,6 +179,7 @@ test("restore rolls back files already written when a later store fails", async 
   });
   assert.deepEqual(data.tasks, [{ id: 1 }]);
   assert.deepEqual(data.notes, [{ id: 2 }]);
+  });
 });
 
 test("semantic memory deletion also removes its derived relationship edge", async () => {

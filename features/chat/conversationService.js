@@ -1,11 +1,15 @@
 import {
   loadHistory,
-  saveHistory
+  saveHistory,
+  updateHistory
 } from "./chatStorage.js";
 
-export function createConversationService(storage = { loadHistory, saveHistory }) {
+export function createConversationService(storage = { loadHistory, saveHistory, updateHistory }) {
   return {
     async addMessage(role, content) {
+      if (storage.updateHistory) {
+        return storage.updateHistory(history => [...history, { role, content, timestamp: Date.now() }]);
+      }
       const history = await storage.loadHistory();
       history.push({ role, content, timestamp: Date.now() });
       await storage.saveHistory(history);

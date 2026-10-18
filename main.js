@@ -1,5 +1,6 @@
 import "dotenv/config";
 import readline from "readline";
+import { recoverPendingRestore } from "./services/restoreStartup.js";
 
 import {
   askAI,
@@ -12,7 +13,7 @@ import {
 
 import {
   loadHistory,
-  saveHistory
+  updateHistory
 } from "./storage/historyStorage.js";
 
 import {
@@ -77,6 +78,8 @@ function ask(question) {
 // =====================
 
 async function main() {
+
+  await recoverPendingRestore();
 
   const profile =
     await loadProfile();
@@ -256,6 +259,11 @@ console.log(
           responseText
       });
 
+      await updateHistory(current => [...current,
+        { role: "user", content: userMessage },
+        { role: "assistant", content: responseText },
+      ]);
+
       if (
   history.length % 50 !== 0
 ) {
@@ -273,9 +281,7 @@ console.log(
     history.length - 10
   );
 
-  await saveHistory(
-    history
-  );
+  await updateHistory(current => current.slice(-10));
 }
 
     } catch (err) {

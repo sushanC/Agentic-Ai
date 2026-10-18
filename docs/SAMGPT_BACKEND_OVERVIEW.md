@@ -68,7 +68,7 @@ For ordinary non-streaming HTTP chat, `POST /chat` calls `handleStandardChat`, s
 | Email V2 | `core/email/` | Intent, contacts, draft state, confirmation, MIME/Gmail send | Google auth, generic confirmation, memory and activity storage | Implemented; recovery durability/confirmation concerns | Source inspected; not live-tested |
 | Google auth/calendar | `core/google/`, `core/calendar/` | OAuth scopes/token persistence, calendar operations and policies | Google APIs, confirmation service | Implemented | calendar unit script: 89 passed |
 | Desktop | `services/desktop/`, `services/tools/desktop/` | OS-level file/app/system actions and history | child processes, filesystem, platform adapters | Partially implemented/platform-dependent | Source inspected; no side-effect test |
-| Confirmation | `services/confirmationService.js`, `storage/pendingActionsStorage.js` | Persist pending action and execute/cancel after confirmation | tool registry, JSON file | Implemented; not atomic/concurrency-safe | Source inspected |
+| Confirmation | `services/confirmationService.js`, `storage/pendingActionsStorage.js` | Persist pending action and execute/cancel after confirmation | tool registry, JSON file | Cross-process state transitions use shared locks; uncertain remote outcomes are retained | Source inspected |
 | Error normalization | `core/errors/` | Structured codes and safe user messages | Capability/workflow/runtime | Implemented in newer path, not universal | fallback script: normalization assertions pass |
 
 ## Documents

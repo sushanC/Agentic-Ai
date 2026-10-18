@@ -21,14 +21,9 @@ export class EpisodicMemoryStore extends BaseMemoryStore {
   }
 
   async initialize() {
-    if (this.initialized) return;
     const list = await storeFile.read();
     this.episodes = list.map(item => MemoryObject.create({ ...item, type: "episodic" }));
     this.initialized = true;
-  }
-
-  async _syncToDisk() {
-    await storeFile.write(this.episodes);
   }
 
   async store(item) {
@@ -40,8 +35,8 @@ export class EpisodicMemoryStore extends BaseMemoryStore {
       importance: item.importance || 0.75,
     });
 
+    await storeFile.update(current => [...current, obj]);
     this.episodes.push(obj);
-    await this._syncToDisk();
     return obj;
   }
 
@@ -52,13 +47,14 @@ export class EpisodicMemoryStore extends BaseMemoryStore {
 
   async delete(id) {
     await this.initialize();
-    const idx = this.episodes.findIndex(e => e.id === id);
-    if (idx !== -1) {
-      this.episodes.splice(idx, 1);
-      await this._syncToDisk();
-      return true;
-    }
-    return false;
+    let deleted = false;
+    await storeFile.update(current => {
+      const next = current.filter(item => item.id !== id);
+      deleted = next.length !== current.length;
+      return next;
+    });
+    this.episodes = this.episodes.filter(item => item.id !== id);
+    return deleted;
   }
 
   async search(filterFn) {
@@ -68,7 +64,7 @@ export class EpisodicMemoryStore extends BaseMemoryStore {
 
   async clear() {
     this.episodes = [];
-    await this._syncToDisk();
+    await storeFile.write([]);
   }
 
   async getAll() {

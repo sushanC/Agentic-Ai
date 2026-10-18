@@ -78,7 +78,7 @@ The picture is a schematic of the `RuntimeManager` path. Legacy CIE methods stil
 | Memory | `features/memory/` | Store registry, ranking, importance, graph/context | JSON stores, AI extraction | Partially integrated; details in memory report |
 | Email | `core/email/` | Conversation, resolution, composition, policy and provider | Gmail, contacts, confirmation | Implemented; see integration report |
 | Calendar | `core/calendar/` | Intent, date/time, conflict, actions, confirmations and provider | Shared Google auth, confirmation | Implemented; unit tests run |
-| Persistence | `storage/`, feature `*Storage.js` | Filesystem JSON read/write | `storagePath.js` | Implemented; no database/locking layer |
+| Persistence | `storage/`, feature `*Storage.js` | Filesystem JSON read/write, per-directory and per-file local locks, recoverable restore journal | `storagePath.js`, `jsonFile.js`, `backupService.js` | Implemented; local same-host filesystem assumptions and remaining compatibility save risks are documented |
 
 ## Legacy AI caller inventory
 
@@ -97,6 +97,6 @@ Phase 3 removed only unused `server.js` imports for `askAI`, `askGroqStream`, an
 
 `CapabilityLifecycle.run()` initializes once per capability instance, calls analyze, plan and execute, returns normalized `CapabilityResult`, and always calls cleanup in `finally`. `WorkflowExecutor` executes sequentially and skips dependents when a prerequisite failed or was skipped. It does not implement workflow cancellation, per-node timeout, parallel branches, retry policy, or resumable workflow persistence in the inspected implementation.
 
-Server starts with `app.listen(3001)` and initializes `voiceManager`; no configurable host/port or coordinated shutdown handler is evident. Phase 4 routes core JSON stores through `storage/jsonFile.js` for atomic single-file replacement and process-local serialized updates. Some generated text files, upload staging and screenshots remain outside that helper; there is no cross-process lock or database transaction layer. See [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md).
+Server recovery runs before `app.listen(3001)`; CLI recovery runs before its first profile/history read. Core JSON operations coordinate across local processes using an exclusive per-directory lock and per-file lock. Restore holds the directory lock for the full staged, verified, rollback-recoverable transaction. This assumes one host and a local filesystem; it is not a database transaction and does not claim power-loss durability. CWD-relative state may differ between launch directories, generated reports use atomic last-writer-wins replacement, and uploads/screenshots remain outside the JSON coordination layer. See [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md).
 
 See [request lifecycle](SAMGPT_REQUEST_LIFECYCLE.md), [capability/workflow](SAMGPT_CAPABILITY_WORKFLOW_ARCHITECTURE.md), and [security audit](SAMGPT_SECURITY_AND_RELIABILITY_AUDIT.md).

@@ -18,8 +18,8 @@ export class SemanticMemoryStore extends BaseMemoryStore {
   }
 
   async initialize() {
-    if (this.initialized) return;
     const json = await loadProfile();
+    this.memoryMap.clear();
     for (const [key, value] of Object.entries(json)) {
       const memoryObj = MemoryObject.create({
         id: `sem_${key}`,
@@ -31,11 +31,6 @@ export class SemanticMemoryStore extends BaseMemoryStore {
       this.memoryMap.set(key, memoryObj);
     }
     this.initialized = true;
-  }
-
-  async _syncToDisk() {
-    const json = await this.getLegacyObject();
-    await saveProfile(json);
   }
 
   async store(item) {
@@ -77,11 +72,10 @@ export class SemanticMemoryStore extends BaseMemoryStore {
   async delete(keyOrId) {
     await this.initialize();
     const cleanKey = keyOrId.replace(/^sem_/, "");
-    const deleted = this.memoryMap.has(cleanKey);
-    if (deleted) {
-      await removeProfileKey(cleanKey);
-      this.memoryMap.delete(cleanKey);
-    }
+    const before = await loadProfile();
+    const deleted = Object.hasOwn(before, cleanKey);
+    await removeProfileKey(cleanKey);
+    this.memoryMap.delete(cleanKey);
     return deleted;
   }
 

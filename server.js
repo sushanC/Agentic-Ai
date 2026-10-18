@@ -5,6 +5,7 @@ import multer from "multer";
 import { createLocalApiGuard, isAllowedLocalOrigin, logSafeError, safeErrorCode } from "./services/httpSecurity.js";
 import { requestContextMiddleware } from "./core/request/RequestContext.js";
 import { createBackupService } from "./services/backupService.js";
+import { recoverPendingRestore } from "./services/restoreStartup.js";
 
 import {
   getModelRegistry,
@@ -857,6 +858,8 @@ app.get(
 // ============================================================
 // Start server
 // ============================================================
+
+await recoverPendingRestore();
 
 app.listen(
   3001,

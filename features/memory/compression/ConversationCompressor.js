@@ -1,6 +1,6 @@
 import { askAI } from "../../../services/ai.js";
 import { buildPrompt } from "../../../services/cie/PromptBuilder.js";
-import { loadHistory, saveHistory } from "../../../storage/historyStorage.js";
+import { loadHistory, updateHistory } from "../../../storage/historyStorage.js";
 import { loadSummary, saveSummary } from "../../../storage/summaryStorage.js";
 
 /**
@@ -36,8 +36,7 @@ export class ConversationCompressor {
       await saveSummary(newSummary);
 
       // Keep recent 5 messages as context window after compression
-      const retainedHistory = history.slice(-5);
-      await saveHistory(retainedHistory);
+      await updateHistory(current => current.length >= maxMessages ? current.slice(-5) : current);
 
       return { compressed: true, summary: newSummary };
     } catch (err) {
