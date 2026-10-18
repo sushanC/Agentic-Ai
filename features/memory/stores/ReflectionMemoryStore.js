@@ -1,10 +1,12 @@
-import fs from "fs/promises";
 import { BaseMemoryStore } from "./BaseMemoryStore.js";
 import { MemoryObject } from "../model/MemoryObject.js";
 import { MEMORY_CONFIG } from "../config/MemoryConfig.js";
 import { getStoragePath } from "../../../storage/storagePath.js";
+import { createJsonFileStore } from "../../../storage/jsonFile.js";
 
-const REFLECTIONS_FILE = getStoragePath("reflections.json");
+const storeFile = createJsonFileStore(getStoragePath("reflections.json"), {
+  fallbackValue: [], validate: Array.isArray, mode: 0o600,
+});
 
 /**
  * ReflectionMemoryStore.js
@@ -20,18 +22,13 @@ export class ReflectionMemoryStore extends BaseMemoryStore {
 
   async initialize() {
     if (this.initialized) return;
-    try {
-      const data = await fs.readFile(REFLECTIONS_FILE, "utf-8");
-      const list = JSON.parse(data);
-      this.reflections = list.map(item => MemoryObject.create({ ...item, type: "reflection" }));
-    } catch {
-      // File does not exist yet
-    }
+    const list = await storeFile.read();
+    this.reflections = list.map(item => MemoryObject.create({ ...item, type: "reflection" }));
     this.initialized = true;
   }
 
   async _syncToDisk() {
-    await fs.writeFile(REFLECTIONS_FILE, JSON.stringify(this.reflections, null, 2));
+    await storeFile.write(this.reflections);
   }
 
   async store(item) {

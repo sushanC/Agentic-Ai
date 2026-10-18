@@ -1,68 +1,23 @@
-/**
- * desktopHistoryStorage.js
- *
- * Stores and retrieves recent desktop actions (newest first, max 100).
- * Follows the same pattern as notesStorage.js and activityStorage.js.
- *
- * Storage: ~/.personal-agent/desktop_history.json
- */
-
-import fs from 'fs/promises';
-import { getStoragePath } from './storagePath.js';
+/** Persistent local history of desktop actions (newest first, max 100). */
+import { getStoragePath } from "./storagePath.js";
+import { createJsonFileStore } from "./jsonFile.js";
 
 const MAX_HISTORY = 100;
-const FILE_NAME   = 'desktop_history.json';
+const store = createJsonFileStore(getStoragePath("desktop_history.json"), {
+  fallbackValue: [], validate: Array.isArray, mode: 0o600,
+});
 
-// getStoragePath is synchronous — just call it directly
-function getFilePath() {
-  return getStoragePath(FILE_NAME);
-}
+export const loadDesktopHistory = () => store.read();
 
-/**
- * Load all desktop action history records.
- * @returns {Promise<object[]>}
- */
-export async function loadDesktopHistory() {
-  try {
-    const data = await fs.readFile(getFilePath(), 'utf-8');
-    return JSON.parse(data);
-  } catch (err) {
-    if (err.code === 'ENOENT') return [];
-    console.error('[DesktopHistory] Load error:', err.message);
-    return [];
-  }
-}
-
-/**
- * Append a new desktop action record to history.
- * Oldest records are dropped after 100 entries.
- * @param {object} record
- */
 export async function addDesktopAction(record) {
   try {
-    const history = await loadDesktopHistory();
-    history.unshift(record);
-
-    // Enforce maximum size
-    if (history.length > MAX_HISTORY) {
-      history.length = MAX_HISTORY;
-    }
-
-    await fs.writeFile(getFilePath(), JSON.stringify(history, null, 2), 'utf-8');
+    await store.update(history => [record, ...history].slice(0, MAX_HISTORY));
   } catch (err) {
-    // Non-fatal — diagnostics must never crash the action pipeline
-    console.error('[DesktopHistory] Write error:', err.message);
+    // History is diagnostic and must not interrupt the requested desktop action.
+    console.error("[DesktopHistory] Write failed", { code: err.code || "STORAGE_WRITE_FAILED" });
   }
 }
 
-/**
- * Clear all desktop history records.
- * @returns {Promise<void>}
- */
 export async function clearDesktopHistory() {
-  try {
-    await fs.writeFile(getFilePath(), JSON.stringify([], null, 2), 'utf-8');
-  } catch (err) {
-    console.error('[DesktopHistory] Clear error:', err.message);
-  }
+  await store.write([]);
 }

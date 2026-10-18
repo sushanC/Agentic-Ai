@@ -17,6 +17,7 @@ export { MemoryDiagnostics, memoryDiagnostics } from "./diagnostics/MemoryDiagno
 // Legacy Compatibility Exports
 export { default as memoryRoutes } from "./memoryRoutes.js";
 export { loadMemory, saveMemory, deleteMemoryKey } from "./memoryStorage.js";
+export { replaceMemory, updateMemoryValue } from "./memoryService.js";
 export { normalizeMemory } from "./memoryNormalizer.js";
 export {
   getRelevantMemories,

@@ -1,5 +1,5 @@
 export { default as noteRoutes } from "./noteRoutes.js";
-export { loadNotes, saveNotes } from "./noteStorage.js";
+export { loadNotes, saveNotes, updateNotes } from "./noteStorage.js";
 export { searchNotes } from "./noteSearch.js";
 export {
   getNotes,

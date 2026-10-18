@@ -1,10 +1,12 @@
-import fs from "fs/promises";
 import { BaseMemoryStore } from "./BaseMemoryStore.js";
 import { MemoryObject } from "../model/MemoryObject.js";
 import { MEMORY_CONFIG } from "../config/MemoryConfig.js";
 import { getStoragePath } from "../../../storage/storagePath.js";
+import { createJsonFileStore } from "../../../storage/jsonFile.js";
 
-const PROJECTS_FILE = getStoragePath("projects.json");
+const storeFile = createJsonFileStore(getStoragePath("projects.json"), {
+  fallbackValue: {}, validate: value => value !== null && typeof value === "object" && !Array.isArray(value), mode: 0o600,
+});
 
 /**
  * ProjectMemoryStore.js
@@ -22,21 +24,16 @@ export class ProjectMemoryStore extends BaseMemoryStore {
 
   async initialize() {
     if (this.initialized) return;
-    try {
-      const data = await fs.readFile(PROJECTS_FILE, "utf-8");
-      const json = JSON.parse(data);
-      for (const [name, projData] of Object.entries(json)) {
-        const obj = MemoryObject.create({
-          id: `proj_${name}`,
-          type: "project",
-          category: "project_knowledge",
-          content: { name, ...projData },
-          importance: 0.85,
-        });
-        this.projects.set(name, obj);
-      }
-    } catch {
-      // File does not exist yet
+    const json = await storeFile.read();
+    for (const [name, projData] of Object.entries(json)) {
+      const obj = MemoryObject.create({
+        id: `proj_${name}`,
+        type: "project",
+        category: "project_knowledge",
+        content: { name, ...projData },
+        importance: 0.85,
+      });
+      this.projects.set(name, obj);
     }
     this.initialized = true;
   }
@@ -47,7 +44,7 @@ export class ProjectMemoryStore extends BaseMemoryStore {
       const { name: _, ...rest } = obj.content;
       json[name] = rest;
     }
-    await fs.writeFile(PROJECTS_FILE, JSON.stringify(json, null, 2));
+    await storeFile.write(json);
   }
 
   async store(item) {

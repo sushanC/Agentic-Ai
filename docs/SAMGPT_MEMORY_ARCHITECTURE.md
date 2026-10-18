@@ -14,7 +14,7 @@
 | Episodic | `EpisodicMemoryStore.js` | `episodic.json` |
 | Reflection | `ReflectionMemoryStore.js` | `reflections.json` |
 
-`RelationshipGraph` persists graph data separately (`memory_graph.json`); not all stores have edges and the graph does not form the retrieval ranking itself. PDF memory is separate from the seven-store registry and is held in `pdf_memory.json`.
+`RelationshipGraph` persists graph data separately (`relationship_graph.json`); not all stores have edges and the graph does not form the retrieval ranking itself. PDF memory is separate from the seven-store registry and is held in `pdf_memory.json`.
 
 ## Ingestion and retrieval
 
@@ -51,8 +51,8 @@ Importance engine calculates an importance value when `MemoryManager.store()` ru
 
 ## Updates, deletion, privacy and diagnostics
 
-Semantic/profile and preference/project stores rewrite their JSON files on update. Episodic/reflection append to arrays and rewrite. Working memory is process-local. Conversation history and summary are owned by their existing storage modules. `MemoryManager.delete()` deletes from one named store (semantic by default), while API `DELETE /memory/:key` uses the memory feature service; no cross-store deletion or complete user-data erasure workflow is established. `MemoryManager.consolidate()` initializes semantic storage and runs conversation compression; it is not a demonstrated cross-store deduplication transaction.
+Semantic/profile, preference/project, episodic/reflection and relationship graph stores now use atomic JSON replacement with mode `0600`; malformed files fail closed. Working memory is process-local. Conversation history and summary use the same shared JSON helper. `MemoryManager.delete()` deletes from one named store (semantic by default); semantic deletion also removes the derived `user has_property` graph edge. This is not cross-store erasure: same-named preferences/projects and references in history, notes, PDFs and prior exports are not removed. `MemoryManager.consolidate()` initializes semantic storage and runs conversation compression; it is not a demonstrated cross-store deduplication transaction.
 
-Files sit under the user's home directory in `~/.personal-agent/`; the inspected code does not show file encryption, restrictive permissions being set, retention scheduling, or a single deletion/export policy. `/backup` returns several data categories over HTTP. Logs and prompt diagnostics should be reviewed for personal content; CIE telemetry prints selected memory keys and relevance scores. Memory diagnostics exist, but do not constitute a privacy boundary.
+Files sit under the user's home directory in `~/.personal-agent/`; migrated JSON files use restrictive `0600` mode but are not encrypted and have no retention scheduler. `/backup` includes semantic profile data and excludes other memory stores and credentials. Logs and prompt diagnostics should be reviewed for personal content; CIE telemetry prints selected memory keys and relevance scores. Memory diagnostics exist, but do not constitute a privacy boundary.
 
-See [API/persistence](SAMGPT_API_AND_ELECTRON_INTEGRATION.md) and [security audit](SAMGPT_SECURITY_AND_RELIABILITY_AUDIT.md).
+See [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md), [API/persistence](SAMGPT_API_AND_ELECTRON_INTEGRATION.md) and [security audit](SAMGPT_SECURITY_AND_RELIABILITY_AUDIT.md).

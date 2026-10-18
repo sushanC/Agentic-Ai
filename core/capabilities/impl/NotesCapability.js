@@ -1,6 +1,6 @@
 import { BaseCapability } from "../BaseCapability.js";
 import { CapabilityResult } from "../CapabilityResult.js";
-import { loadNotes, saveNotes } from "../../../features/notes/index.js";
+import { updateNotes } from "../../../features/notes/index.js";
 import { incrementStat } from "../../../storage/statsStorage.js";
 
 /**
@@ -21,9 +21,7 @@ export class NotesCapability extends BaseCapability {
   }
 
   async execute(context) {
-    const notes = await loadNotes();
-    notes.push({ id: Date.now(), content: context.prompt });
-    await saveNotes(notes);
+    await updateNotes(notes => [...notes, { id: Date.now(), content: context.prompt }]);
     await incrementStat("notes_saved");
 
     return CapabilityResult.create({

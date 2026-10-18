@@ -1,4 +1,4 @@
-import { loadNotes, saveNotes } from "../../features/notes/index.js";
+import { updateNotes } from "../../features/notes/index.js";
 import { incrementStat } from "../../storage/statsStorage.js";
 import { addActivity } from "../../storage/activityStorage.js";
 
@@ -8,13 +8,10 @@ export class SaveNoteTool {
       ? action.input
       : action.input?.content || action.input?.text || "";
 
-    const notes = await loadNotes();
-    notes.push({
+    await updateNotes(notes => [...notes, {
       id: Date.now(),
       content: noteText
-    });
-
-    await saveNotes(notes);
+    }]);
     await incrementStat("notes_saved");
     addActivity("Saved note");
 

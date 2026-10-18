@@ -1,58 +1,19 @@
-import fs from "fs/promises";
+import { getStoragePath } from "../../storage/storagePath.js";
+import { createJsonFileStore } from "../../storage/jsonFile.js";
 
-import {
-  getStoragePath
-} from "../../storage/storagePath.js";
+const store = createJsonFileStore(getStoragePath("pdf_memory.json"), {
+  fallbackValue: {},
+  validate: value => value !== null && typeof value === "object" && !Array.isArray(value),
+  mode: 0o600,
+});
 
-const PDF_MEMORY_FILE =
-  getStoragePath(
-    "pdf_memory.json"
-  );
+export const loadPDFMemory = () => store.read();
+export const savePDFMemory = memory => store.write(memory);
+export const updatePDFMemory = updater => store.update(updater);
 
-export async function loadPDFMemory() {
-
-  try {
-
-    const data =
-      await fs.readFile(
-        PDF_MEMORY_FILE,
-        "utf-8"
-      );
-
-    return JSON.parse(
-      data
-    );
-
-  } catch {
-
-    return {};
-  }
-}
-
-export async function savePDFMemory(
-  memory
-) {
-
-  await fs.writeFile(
-    PDF_MEMORY_FILE,
-    JSON.stringify(
-      memory,
-      null,
-      2
-    )
-  );
-}
-
-export async function deletePDF(
-  pdfName
-) {
-
-  const memory =
-    await loadPDFMemory();
-
-  delete memory[pdfName];
-
-  await savePDFMemory(
-    memory
-  );
+export async function deletePDF(pdfName) {
+  await store.update(memory => {
+    delete memory[pdfName];
+    return memory;
+  });
 }

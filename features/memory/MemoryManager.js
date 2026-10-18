@@ -132,7 +132,12 @@ export class MemoryManager {
   async delete(keyOrId, storeName = "semantic") {
     const store = this.registry.getStore(storeName);
     if (!store) return false;
-    return await store.delete(keyOrId);
+    const deleted = await store.delete(keyOrId);
+    if (deleted && String(storeName).toLowerCase() === "semantic") {
+      const key = String(keyOrId).replace(/^sem_/, "");
+      await this.graph.removeRelationship("user", key, "has_property");
+    }
+    return deleted;
   }
 
   /**
@@ -169,6 +174,26 @@ export class MemoryManager {
   async getLegacyProfile() {
     const store = this.registry.getStore("semantic");
     return store ? await store.getLegacyObject() : {};
+  }
+
+  async replaceLegacyProfile(profile) {
+    const store = this.registry.getStore("semantic");
+    if (!store?.replaceLegacyObject) throw new Error("Semantic profile replacement is unavailable.");
+    const previous = await store.getLegacyObject();
+    await store.replaceLegacyObject(profile);
+    for (const key of Object.keys(previous)) {
+      await this.graph.removeRelationship("user", key, "has_property");
+    }
+    for (const key of Object.keys(profile)) {
+      await this.graph.addRelationship("user", key, "has_property");
+    }
+    return true;
+  }
+
+  async updateSemanticValue(key, updater) {
+    const store = this.registry.getStore("semantic");
+    if (!store?.updateValue) throw new Error("Semantic value updates are unavailable.");
+    return store.updateValue(key, updater);
   }
 }
 

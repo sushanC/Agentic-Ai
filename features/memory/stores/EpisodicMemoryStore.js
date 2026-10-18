@@ -1,10 +1,12 @@
-import fs from "fs/promises";
 import { BaseMemoryStore } from "./BaseMemoryStore.js";
 import { MemoryObject } from "../model/MemoryObject.js";
 import { MEMORY_CONFIG } from "../config/MemoryConfig.js";
 import { getStoragePath } from "../../../storage/storagePath.js";
+import { createJsonFileStore } from "../../../storage/jsonFile.js";
 
-const EPISODIC_FILE = getStoragePath("episodic.json");
+const storeFile = createJsonFileStore(getStoragePath("episodic.json"), {
+  fallbackValue: [], validate: Array.isArray, mode: 0o600,
+});
 
 /**
  * EpisodicMemoryStore.js
@@ -20,18 +22,13 @@ export class EpisodicMemoryStore extends BaseMemoryStore {
 
   async initialize() {
     if (this.initialized) return;
-    try {
-      const data = await fs.readFile(EPISODIC_FILE, "utf-8");
-      const list = JSON.parse(data);
-      this.episodes = list.map(item => MemoryObject.create({ ...item, type: "episodic" }));
-    } catch {
-      // File does not exist yet
-    }
+    const list = await storeFile.read();
+    this.episodes = list.map(item => MemoryObject.create({ ...item, type: "episodic" }));
     this.initialized = true;
   }
 
   async _syncToDisk() {
-    await fs.writeFile(EPISODIC_FILE, JSON.stringify(this.episodes, null, 2));
+    await storeFile.write(this.episodes);
   }
 
   async store(item) {

@@ -12,7 +12,7 @@ if (!fs.existsSync(appFolder)) {
 
   fs.mkdirSync(
     appFolder,
-    { recursive: true }
+    { recursive: true, mode: 0o700 }
   );
 }
 

@@ -67,7 +67,7 @@ See the routing diagram and ordering discussion in [backend architecture](SAMGPT
 
 ## Recovery gaps to track
 
-The request lifecycle does not persist an in-progress workflow, cancellation token or execution checkpoint. A server restart can lose in-memory conversation sessions and cannot resume a workflow. Provider retries and fallback are separate from business-action retry; a failed business operation should not be replayed simply because an AI provider failed. See [security and reliability audit](SAMGPT_SECURITY_AND_RELIABILITY_AUDIT.md).
+The request lifecycle does not persist an in-progress workflow, cancellation token or execution checkpoint. A server restart can lose in-memory conversation sessions and cannot resume a workflow. Persisted confirmation records left `executing` are marked `outcome_unknown` when next observed and are never automatically replayed; external effects must be reconciled. Provider retries and fallback are separate from business-action retry; a failed business operation should not be replayed simply because an AI provider failed. See [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md) and [security and reliability audit](SAMGPT_SECURITY_AND_RELIABILITY_AUDIT.md).
 
 ## Phase 3 verification boundary
 

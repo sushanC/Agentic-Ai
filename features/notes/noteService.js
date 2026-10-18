@@ -1,6 +1,6 @@
 import {
   loadNotes,
-  saveNotes
+  updateNotes
 } from "./noteStorage.js";
 
 import {
@@ -24,43 +24,22 @@ export async function getNotes() {
 }
 
 export async function createNote(content) {
-  const notes = await loadNotes();
-
-  notes.push({
-    id: Date.now(),
-    content
-  });
-
-  await saveNotes(notes);
+  await updateNotes(notes => [...notes, { id: Date.now(), content }]);
   await incrementStat("notes_saved");
 
   return { success: true };
 }
 
 export async function updateNote(id, content) {
-  const notes = await loadNotes();
-
-  const note = notes.find(
-    n => n.id === Number(id)
-  );
-
-  if (note) {
-    note.content = content;
-  }
-
-  await saveNotes(notes);
+  await updateNotes(notes => notes.map(note =>
+    note.id === Number(id) ? { ...note, content } : note
+  ));
 
   return { success: true };
 }
 
 export async function deleteNote(id) {
-  const notes = await loadNotes();
-
-  const updated = notes.filter(
-    note => note.id !== Number(id)
-  );
-
-  await saveNotes(updated);
+  await updateNotes(notes => notes.filter(note => note.id !== Number(id)));
 
   return { success: true };
 }
@@ -137,20 +116,20 @@ export async function handleNotes(userMessage) {
         .trim()
     );
 
-    const notes = await loadNotes();
+    let deleted = false;
+    await updateNotes(notes => {
+      const updated = notes.filter(note => note.id !== noteId);
+      deleted = updated.length !== notes.length;
+      return updated;
+    });
 
-    const updatedNotes = notes.filter(
-      note => note.id !== noteId
-    );
-
-    if (updatedNotes.length === notes.length) {
+    if (!deleted) {
       console.log(
         "\nAI: Note not found.\n"
       );
       return true;
     }
 
-    await saveNotes(updatedNotes);
     console.log(
       `\n🗑️ Deleted note ${noteId}\n`
     );
@@ -194,16 +173,12 @@ export async function handleNotes(userMessage) {
       ""
     );
 
-    const notes = await loadNotes();
     const embedding = await getEmbedding(noteContent);
-
-    notes.push({
+    await updateNotes(notes => [...notes, {
       id: Date.now(),
       content: noteContent,
       embedding
-    });
-
-    await saveNotes(notes);
+    }]);
     console.log(
       "\n📝 Note saved.\n"
     );

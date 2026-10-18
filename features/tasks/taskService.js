@@ -2,7 +2,7 @@ import fs from "fs/promises";
 
 import {
   loadTasks,
-  saveTasks
+  updateTasks
 } from "./taskStorage.js";
 
 import {
@@ -22,43 +22,27 @@ export async function getTasks() {
 }
 
 export async function createTask(text) {
-  const tasks = await loadTasks();
-
-  tasks.push({
+  await updateTasks(tasks => [...tasks, {
     id: Date.now(),
     text,
     completed: false
-  });
-
-  await saveTasks(tasks);
+  }]);
   await incrementStat("tasks_created");
 
   return { success: true };
 }
 
 export async function updateTask(id) {
-  const tasks = await loadTasks();
-
-  const task = tasks.find(
-    t => t.id === Number(id)
-  );
-
-  if (task) {
-    task.completed = !task.completed;
-    await saveTasks(tasks);
-  }
+  await updateTasks(tasks => tasks.map(task => task.id === Number(id)
+    ? { ...task, completed: !task.completed }
+    : task
+  ));
 
   return { success: true };
 }
 
 export async function deleteTask(id) {
-  const tasks = await loadTasks();
-
-  const updated = tasks.filter(
-    task => task.id !== Number(id)
-  );
-
-  await saveTasks(updated);
+  await updateTasks(tasks => tasks.filter(task => task.id !== Number(id)));
 
   return { success: true };
 }
@@ -157,18 +141,19 @@ export async function handleTasks(
       .replace(/^complete task /i, "")
       .trim();
 
-    const tasks = await loadTasks();
-    const task = tasks.find(
-      t => t.task.toLowerCase() === taskName.toLowerCase()
-    );
+    let found = false;
+    await updateTasks(tasks => tasks.map(task => {
+      if (typeof task.task === "string" && task.task.toLowerCase() === taskName.toLowerCase()) {
+        found = true;
+        return { ...task, status: "completed" };
+      }
+      return task;
+    }));
 
-    if (!task) {
+    if (!found) {
       console.log("\nAI: Task not found.\n");
       return true;
     }
-
-    task.status = "completed";
-    await saveTasks(tasks);
 
     console.log(`\nAI: Marked "${taskName}" as completed.\n`);
     return true;
@@ -203,23 +188,16 @@ export async function handleTasks(
       .replace(/^add task /i, "")
       .trim();
 
-    const tasks = await loadTasks();
-
-    const exists = tasks.some(
-      t => t.task.toLowerCase() === taskName.toLowerCase()
-    );
+    let exists = false;
+    await updateTasks(tasks => {
+      exists = tasks.some(t => typeof t.task === "string" && t.task.toLowerCase() === taskName.toLowerCase());
+      return exists ? tasks : [...tasks, { task: taskName, status: "pending" }];
+    });
 
     if (exists) {
       console.log("\nAI: Task already exists.\n");
       return true;
     }
-
-    tasks.push({
-      task: taskName,
-      status: "pending"
-    });
-
-    await saveTasks(tasks);
 
     console.log(`\nAI: Added task "${taskName}"\n`);
     return true;
@@ -233,18 +211,17 @@ export async function handleTasks(
       .replace(/^remove task /i, "")
       .trim();
 
-    const tasks = await loadTasks();
+    let removed = false;
+    await updateTasks(tasks => {
+      const updated = tasks.filter(t => !(typeof t.task === "string" && t.task.toLowerCase() === taskName.toLowerCase()));
+      removed = updated.length !== tasks.length;
+      return updated;
+    });
 
-    const updatedTasks = tasks.filter(
-      t => t.task.toLowerCase() !== taskName.toLowerCase()
-    );
-
-    if (updatedTasks.length === tasks.length) {
+    if (!removed) {
       console.log("\nAI: Task not found.\n");
       return true;
     }
-
-    await saveTasks(updatedTasks);
 
     console.log(`\nAI: Removed "${taskName}"\n`);
     return true;

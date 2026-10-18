@@ -1,59 +1,20 @@
-import fs from "fs/promises";
+import { getStoragePath } from "../../storage/storagePath.js";
+import { createJsonFileStore } from "../../storage/jsonFile.js";
 
-import {
-  getStoragePath
-} from "../../storage/storagePath.js";
-
-const HISTORY_FILE =
-  getStoragePath(
-    "chat_history.json"
-  );
-
-export function createChatStorage(filePath) {
+export function createChatStorage(filePath = getStoragePath("chat_history.json")) {
+  const store = createJsonFileStore(filePath, {
+    fallbackValue: [],
+    validate: Array.isArray,
+    mode: 0o600,
+  });
   return {
-    async loadHistory() {
-      try {
-        return JSON.parse(await fs.readFile(filePath, "utf-8"));
-      } catch {
-        return [];
-      }
-    },
-    async saveHistory(history) {
-      await fs.writeFile(filePath, JSON.stringify(history, null, 2), { mode: 0o600 });
-    },
+    loadHistory: () => store.read(),
+    saveHistory: history => store.write(history),
+    updateHistory: updater => store.update(updater),
   };
 }
 
-export async function loadHistory() {
-
-  try {
-
-    const data =
-      await fs.readFile(
-        HISTORY_FILE,
-        "utf-8"
-      );
-
-    return JSON.parse(
-      data
-    );
-
-  } catch {
-
-    return [];
-  }
-}
-
-export async function saveHistory(
-  history
-) {
-
-  await fs.writeFile(
-    HISTORY_FILE,
-    JSON.stringify(
-      history,
-      null,
-      2
-    )
-  );
-}
+const defaultStorage = createChatStorage();
+export const loadHistory = (...args) => defaultStorage.loadHistory(...args);
+export const saveHistory = (...args) => defaultStorage.saveHistory(...args);
+export const updateHistory = (...args) => defaultStorage.updateHistory(...args);

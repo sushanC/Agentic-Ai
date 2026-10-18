@@ -1,10 +1,12 @@
-import fs from "fs/promises";
 import { BaseMemoryStore } from "./BaseMemoryStore.js";
 import { MemoryObject } from "../model/MemoryObject.js";
 import { MEMORY_CONFIG } from "../config/MemoryConfig.js";
 import { getStoragePath } from "../../../storage/storagePath.js";
+import { createJsonFileStore } from "../../../storage/jsonFile.js";
 
-const PREFERENCES_FILE = getStoragePath("preferences.json");
+const storeFile = createJsonFileStore(getStoragePath("preferences.json"), {
+  fallbackValue: {}, validate: value => value !== null && typeof value === "object" && !Array.isArray(value), mode: 0o600,
+});
 
 /**
  * PreferenceMemoryStore.js
@@ -21,21 +23,16 @@ export class PreferenceMemoryStore extends BaseMemoryStore {
 
   async initialize() {
     if (this.initialized) return;
-    try {
-      const data = await fs.readFile(PREFERENCES_FILE, "utf-8");
-      const json = JSON.parse(data);
-      for (const [key, value] of Object.entries(json)) {
-        const obj = MemoryObject.create({
-          id: `pref_${key}`,
-          type: "preference",
-          category: "user_preference",
-          content: { key, value },
-          importance: 0.90,
-        });
-        this.prefs.set(key, obj);
-      }
-    } catch {
-      // File does not exist yet
+    const json = await storeFile.read();
+    for (const [key, value] of Object.entries(json)) {
+      const obj = MemoryObject.create({
+        id: `pref_${key}`,
+        type: "preference",
+        category: "user_preference",
+        content: { key, value },
+        importance: 0.90,
+      });
+      this.prefs.set(key, obj);
     }
     this.initialized = true;
   }
@@ -45,7 +42,7 @@ export class PreferenceMemoryStore extends BaseMemoryStore {
     for (const [key, obj] of this.prefs.entries()) {
       json[key] = obj.content.value;
     }
-    await fs.writeFile(PREFERENCES_FILE, JSON.stringify(json, null, 2));
+    await storeFile.write(json);
   }
 
   async store(item) {

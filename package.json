@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node tests/phase1/security-integrity.test.js && node tests/phase2/request-lifecycle.test.js && node tests/phase3/chat-route.integration.test.js",
+    "test": "node tests/phase1/security-integrity.test.js && node tests/phase2/request-lifecycle.test.js && node tests/phase3/chat-route.integration.test.js && node tests/phase4/storage-recovery.test.js",
     "start": "node server.js"
   },
   "author": "Sushan Achar",

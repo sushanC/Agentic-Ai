@@ -1,18 +1,26 @@
 # Security and reliability audit
 
-Scope: static source inspection of the checked-out working tree on 2026-10-16 plus local, non-network regression scripts. This is not a penetration test, dependency vulnerability scan, deployment review, or certification. No credentials or personal data were read for this report; `.env` contents were intentionally not displayed. Findings are evidence-based; baseline findings and current Phase 1 status are distinguished below.
+Scope: static source inspection of the checked-out working tree on 2026-10-16, with Phase 4 storage/recovery follow-up on 2026-10-18 and local regression scripts. This is not a penetration test, dependency vulnerability scan, deployment review, or certification. No credentials or personal data were read for this report; `.env` contents were intentionally not displayed. Findings are evidence-based; baseline and current dispositions are distinguished below.
 
 ## Phase 1 disposition (2026-10-16)
 
 The original findings below describe the pre-hardening baseline. Phase 1 and Phase 2 changes are now present in the working tree and verified by `npm test`; implemented controls and remaining limits are summarized here.
 
 - The API binds to `127.0.0.1:3001`; middleware also rejects non-loopback peers and unapproved browser origins. Set `SAMGPT_ALLOWED_ORIGINS` to comma-separated exact trusted HTTP(S) origins for a local browser client. This is a local single-user boundary, not authentication for network or multi-user use. `Origin: null` and Electron `file://` origins are rejected.
-- Pending actions use serialized in-process JSON updates and atomic file replacement. Confirmation claims `pending → executing` before tool execution; terminal `completed` and `failed` records cannot run again. A crash after claim fails closed and requires manual reconciliation. The lock is process-local, so multiple server processes are not safe.
-- Google OAuth uses unpredictable one-use state with a ten-minute expiry and callback purpose checks. State lives in memory and is invalidated by restart. Token and pending-action JSON writes are atomic and use mode `0600`; malformed files now raise a storage error instead of appearing empty. These guarantees apply to those two stores only, not all application JSON stores.
+- Pending actions use serialized in-process JSON updates and atomic file replacement. Confirmation claims `pending → executing` before tool execution; terminal `completed` and `failed` records cannot run again. A crash after claim is retained as `outcome_unknown` when next observed and requires manual reconciliation. The lock is process-local, so multiple server processes are not safe.
+- Google OAuth uses unpredictable one-use state with a ten-minute expiry and callback purpose checks. State lives in memory and is invalidated by restart. Token and pending-action JSON writes are atomic and use mode `0600`; malformed files now raise a storage error instead of appearing empty. Phase 4 migrated core profile, memory, chat, note, task, settings, stats and PDF-memory JSON files to the same helper; see the storage inventory for remaining exceptions.
 - Desktop tool dispatch validates path containment (including existing symlink targets), app names, URLs, filenames and clipboard input centrally; configured high-impact operations require confirmation. Filesystem checks still have a time-of-check/time-of-use window, and no Electron renderer/preload/bridge is present to verify the client-side confirmation contract.
 - Reviewed server/controller/provider logs avoid raw error messages, prompt/body text, recipient addresses and IPC payloads. This is not an exhaustive audit of every diagnostic in the repository.
 
 The historical findings below remain useful as a baseline record. Findings addressed by Phase 1 should be read with the disposition above; unrelated fallback, upload, API contract and data-retention findings remain open.
+
+## Phase 4 disposition (2026-10-18)
+
+- Core JSON stores now use same-directory temporary writes and atomic rename, fail on malformed/wrong-root JSON instead of silently returning empty defaults, and use mode `0600`. In-process per-file read-modify-write locks protect migrated operations; they are not cross-process locks.
+- Profile and semantic memory share the same storage helper. CLI memory extraction merges keys rather than rewriting a stale full profile snapshot. Semantic deletion removes its derived relationship-graph edge.
+- Pending `executing` records observed after process restart become retained `outcome_unknown` records and cannot be confirmed again. Expired active in-process claims are retained. There is no automatic resend; a user must reconcile the external system.
+- `/restore` validates type, version, maximum JSON size and structure bounds before writing, snapshots selected stores, writes sequentially and attempts rollback on failure. It is best-effort across files and can be interrupted by a process crash. Credentials and pending actions remain excluded from ordinary backup.
+- Coverage and precise store paths are in [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md). Uploaded PDF files, screenshots and generated text reports still lack unified atomic/retention handling.
 
 ## Findings by severity
 
@@ -26,7 +34,7 @@ Before Phase 1, the API had no explicit host bind or local-access guard. It now 
 
 Before Phase 1, confirmation was not claimed atomically. It now transitions `pending → executing` under an in-process file lock and atomic rename before the tool runs. Repeated/concurrent confirmations fail closed; failed and completed records remain terminal until expiry. The guarantee is process-local, and a crash after claim can leave an `executing` record needing manual reconciliation. External side effects with uncertain outcomes after a crash cannot be made exactly-once by this JSON store alone.
 
-**Next step:** use transactional storage if multiple backend processes are introduced, and add reconciliation for claims left `executing` after a crash. Provider idempotency is still needed to resolve uncertain external side effects safely.
+**Phase 4 update:** restarted `executing` records are converted to retained `outcome_unknown`; confirmation does not replay them. External state still requires reconciliation, and the lock remains process-local. Use transactional storage if multiple backend processes are introduced.
 
 ### High: Desktop tools can have local machine side effects through the request path
 
@@ -60,15 +68,15 @@ Google auth URL construction previously did not validate callback state. It now 
 
 ### Medium: File persistence lacks atomicity, concurrency control and explicit restrictive modes
 
-Most application JSON stores still use their existing persistence behavior. Phase 1 adds atomic replace, serialized in-process updates, explicit corruption errors and mode `0600` specifically for pending actions and Google tokens. These files are not encrypted at rest, and the helpers do not make multiple backend processes safe.
+The core user JSON stores now use atomic replace, shape validation, serialized in-process updates and mode `0600`. Generated text reports, PDF upload staging and screenshots remain outside this helper. These files are not encrypted at rest, and the locks do not make multiple backend processes safe.
 
-**Next step:** extend atomic writes, locking and explicit corruption reporting to remaining stores; define encryption, backup, retention and deletion behavior. Move to transactional storage before running multiple server processes.
+**Next step:** migrate remaining read-modify-write compatibility callers, define retention/deletion behavior and keep one backend process per data directory. Move to transactional storage before running multiple server processes.
 
 ### Low/Medium: Request input and upload bounds are not consistently visible at server boundary
 
-`server.js` uses default `express.json()` and multer disk destination `uploads/`; PDF routes accept an uploaded file. The chat controller now rejects missing, non-string and blank chat messages, but there is no central body-size/rate limit or error mapping configured at initialization. The `/restore` route writes caller-provided collections/objects with only broad type checks. Exact impact depends on local/network exposure and downstream parsers.
+`server.js` now limits JSON bodies to 100 KB, except `/restore` at 1 MB; multer still writes to `uploads/` without a configured file-size limit. The `/restore` route validates a maximum 1 MB parsed object, depth and node limits, plus supported category root shapes before writing. Upload MIME/signature handling and downstream element-level validation still need review. Exact impact depends on local/network exposure and downstream parsers.
 
-**Recommendation:** apply explicit body/upload limits, MIME/signature and parser constraints; schema validate restore and all side-effect requests; clean temporary uploads on every outcome and define retention.
+**Recommendation:** keep explicit JSON body limits; add upload size, MIME/signature and parser constraints; validate side-effect request schemas; clean temporary uploads on every outcome and define retention.
 
 ### Low/Medium: Legacy runtime entry points still coexist with the canonical chat lifecycle
 

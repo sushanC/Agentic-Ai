@@ -1,42 +1,11 @@
-import fs from "fs/promises";
+import { getStoragePath } from "./storagePath.js";
+import { createJsonFileStore } from "./jsonFile.js";
 
-import {
-  getStoragePath
-} from "./storagePath.js";
+const store = createJsonFileStore(getStoragePath("summary.json"), {
+  fallbackValue: { summary: "" },
+  validate: value => typeof value === "string" || (value !== null && typeof value === "object" && !Array.isArray(value)),
+  mode: 0o600,
+});
 
-const SUMMARY_FILE =
-  getStoragePath("summary.json");
-
-export async function loadSummary() {
-
-  try {
-
-    const data =
-      await fs.readFile(
-        SUMMARY_FILE,
-        "utf8"
-      );
-
-    return JSON.parse(data);
-
-  } catch {
-
-    return {
-      summary: ""
-    };
-  }
-}
-
-export async function saveSummary(
-  summary
-) {
-
-  await fs.writeFile(
-    SUMMARY_FILE,
-    JSON.stringify(
-      summary,
-      null,
-      2
-    )
-  );
-}
+export const loadSummary = () => store.read();
+export const saveSummary = summary => store.write(summary);

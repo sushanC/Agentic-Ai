@@ -1,40 +1,22 @@
-import fs from "fs/promises";
+import { getStoragePath } from "./storagePath.js";
+import { createJsonFileStore } from "./jsonFile.js";
 
-import {
-  getStoragePath
-} from "./storagePath.js";
+const store = createJsonFileStore(getStoragePath("profile.json"), {
+  fallbackValue: {},
+  validate: value => value !== null && typeof value === "object" && !Array.isArray(value),
+  mode: 0o600,
+});
 
-const PROFILE_FILE =
-  getStoragePath("profile.json");
+export const loadProfile = () => store.read();
+export const saveProfile = profile => store.write(profile);
 
-export async function loadProfile() {
-
-  try {
-
-    const data =
-      await fs.readFile(
-        PROFILE_FILE,
-        "utf-8"
-      );
-
-    return JSON.parse(data);
-
-  } catch {
-
-    return {};
-  }
-}
-
-export async function saveProfile(
-  profile
-) {
-
-  await fs.writeFile(
-    PROFILE_FILE,
-    JSON.stringify(
-      profile,
-      null,
-      2
-    )
-  );
-}
+/** Merge extracted profile facts without overwriting keys saved by memory concurrently. */
+export const updateProfile = patch => store.update(profile => ({ ...profile, ...patch }));
+export const updateProfileValue = (key, updater) => store.update(profile => {
+  profile[key] = updater(profile[key]);
+  return profile;
+});
+export const removeProfileKey = key => store.update(profile => {
+  delete profile[key];
+  return profile;
+});

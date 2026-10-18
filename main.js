@@ -7,8 +7,7 @@ import {
 } from "./services/ai.js";
 
 import {
-  loadProfile,
-  saveProfile
+  loadProfile
 } from "./storage/profileStorage.js";
 
 import {
@@ -29,7 +28,8 @@ import {
 } from "./features/tasks/index.js";
 
 import {
-  handleMemory
+  handleMemory,
+  saveMemory
 } from "./features/memory/index.js";
 
 import {
@@ -179,14 +179,8 @@ async function main() {
           .length > 0
       ) {
 
-        Object.assign(
-          profile,
-          memory
-        );
-
-        await saveProfile(
-          profile
-        );
+        Object.assign(profile, memory);
+        await saveMemory(memory);
       }
 
     } catch (err) {

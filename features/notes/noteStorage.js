@@ -1,44 +1,10 @@
-import fs from "fs/promises";
+import { getStoragePath } from "../../storage/storagePath.js";
+import { createJsonFileStore } from "../../storage/jsonFile.js";
 
-import {
-  getStoragePath
-} from "../../storage/storagePath.js";
+const store = createJsonFileStore(getStoragePath("notes.json"), {
+  fallbackValue: [], validate: Array.isArray, mode: 0o600,
+});
 
-const NOTES_FILE =
-  getStoragePath(
-    "notes.json"
-  );
-
-export async function loadNotes() {
-
-  try {
-
-    const data =
-      await fs.readFile(
-        NOTES_FILE,
-        "utf-8"
-      );
-
-    return JSON.parse(
-      data
-    );
-
-  } catch {
-
-    return [];
-  }
-}
-
-export async function saveNotes(
-  notes
-) {
-
-  await fs.writeFile(
-    NOTES_FILE,
-    JSON.stringify(
-      notes,
-      null,
-      2
-    )
-  );
-}
+export const loadNotes = () => store.read();
+export const saveNotes = notes => store.write(notes);
+export const updateNotes = updater => store.update(updater);

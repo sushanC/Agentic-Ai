@@ -4,6 +4,7 @@ import cors from "cors";
 import multer from "multer";
 import { createLocalApiGuard, isAllowedLocalOrigin, logSafeError, safeErrorCode } from "./services/httpSecurity.js";
 import { requestContextMiddleware } from "./core/request/RequestContext.js";
+import { createBackupService } from "./services/backupService.js";
 
 import {
   getModelRegistry,
@@ -72,7 +73,8 @@ import {
 import {
   updateMemory,
   loadMemory,
-  saveMemory,
+  replaceMemory,
+  updateMemoryValue,
   deleteMemoryKey,
   memoryRoutes
 } from "./features/memory/index.js";
@@ -92,6 +94,7 @@ import {
 import {
   loadSettings,
   saveSettings,
+  replaceSettings,
   settingsRoutes
 } from "./features/settings/index.js";
 
@@ -103,6 +106,15 @@ import {
 } from "./storage/statsStorage.js";
 
 const app = express();
+
+const backupService = createBackupService({
+  loadTasks, saveTasks, loadNotes, saveNotes, loadMemory, replaceMemory,
+  loadHistory, saveHistory: async history => {
+    const { saveHistory: saveChatHistory } = await import("./features/chat/index.js");
+    return saveChatHistory(history);
+  },
+  loadSettings, saveSettings, replaceSettings, loadStats, saveStats,
+});
 
 const configuredOrigins = (process.env.SAMGPT_ALLOWED_ORIGINS || "")
   .split(",").map(value => value.trim()).filter(Boolean);
@@ -120,7 +132,11 @@ const upload = multer({
   dest: "uploads/"
 });
 
-app.use(express.json());
+const standardJsonParser = express.json({ limit: "100kb" });
+const restoreJsonParser = express.json({ limit: "1mb" });
+app.use((req, res, next) => {
+  (req.path === "/restore" ? restoreJsonParser : standardJsonParser)(req, res, next);
+});
 
 // ============================================================
 // Chat Routes (Refactored into features/chat)
@@ -212,34 +228,7 @@ app.get(
 
     try {
 
-      const [
-        tasks,
-        notes,
-        memory,
-        history,
-        settings,
-        stats
-      ] = await Promise.all([
-        loadTasks(),
-        loadNotes(),
-        loadMemory(),
-        loadHistory(),
-        loadSettings(),
-        loadStats()
-      ]);
-
-      const backup = {
-        version: "1.0",
-        timestamp: new Date().toISOString(),
-        tasks,
-        notes,
-        memory,
-        history,
-        settings,
-        stats
-      };
-
-      res.json(backup);
+      res.json(await backupService.createBackup());
 
     } catch (err) {
 
@@ -263,56 +252,16 @@ app.post(
 
     try {
 
-      const {
-        tasks,
-        notes,
-        memory,
-        history,
-        settings
-      } = req.body;
-
-      const ops = [];
-
-      if (Array.isArray(tasks)) {
-        ops.push(saveTasks(tasks));
-      }
-
-      if (Array.isArray(notes)) {
-        ops.push(saveNotes(notes));
-      }
-
-      if (memory && typeof memory === "object") {
-        ops.push(saveMemory(memory));
-      }
-
-      if (Array.isArray(history)) {
-        const {
-          saveHistory
-        } = await import("./features/chat/index.js");
-        ops.push(saveHistory(history));
-      }
-
-      if (settings && typeof settings === "object") {
-        ops.push(saveSettings(settings));
-      }
-
-      await Promise.all(ops);
-
-      res.json({
-        success: true,
-        restored: {
-          tasks: Array.isArray(tasks) ? tasks.length : 0,
-          notes: Array.isArray(notes) ? notes.length : 0,
-          memory: memory ? Object.keys(memory).length : 0,
-          history: Array.isArray(history) ? history.length : 0
-        }
-      });
+      res.json(await backupService.restoreBackup(req.body));
 
     } catch (err) {
 
       logSafeError("Restore request failed", err);
-
-      res.status(500).json({ error: "Restore failed." });
+      const invalidBackup = ["BACKUP_INVALID", "BACKUP_VERSION_UNSUPPORTED", "BACKUP_TOO_LARGE", "BACKUP_TOO_COMPLEX"].includes(err.code);
+      res.status(invalidBackup ? 400 : 500).json({
+        error: invalidBackup ? err.message : "Restore failed.",
+        ...(err.code === "BACKUP_RESTORE_FAILED" ? { rollbackComplete: Boolean(err.rollbackComplete) } : {}),
+      });
     }
   }
 );
@@ -622,13 +571,13 @@ app.post(
 
       // Save the contact to memory for future lookups
       if (draft.recipientName) {
-        const memory = await loadMemory();
-        if (!memory.contacts) memory.contacts = {};
-        memory.contacts[draft.recipientName] = {
-          email: providedEmail,
-          savedAt: new Date().toISOString()
-        };
-        await saveMemory(memory);
+        await updateMemoryValue("contacts", current => ({
+          ...(current && typeof current === "object" && !Array.isArray(current) ? current : {}),
+          [draft.recipientName]: {
+            email: providedEmail,
+            savedAt: new Date().toISOString()
+          }
+        }));
       }
 
       // Remove the old WAITING_FOR_INPUT pending record

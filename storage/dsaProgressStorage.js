@@ -1,36 +1,11 @@
-import fs from "fs/promises";
+import path from "path";
+import { createJsonFileStore } from "./jsonFile.js";
 
-const FILE =
-  "./dsa_progress.json";
+const store = createJsonFileStore(path.resolve("./dsa_progress.json"), {
+  fallbackValue: {},
+  validate: value => value !== null && typeof value === "object" && !Array.isArray(value),
+  mode: 0o600,
+});
 
-export async function loadDSAProgress() {
-
-  try {
-
-    const data =
-      await fs.readFile(
-        FILE,
-        "utf-8"
-      );
-
-    return JSON.parse(data);
-
-  } catch {
-
-    return {};
-  }
-}
-
-export async function saveDSAProgress(
-  progress
-) {
-
-  await fs.writeFile(
-    FILE,
-    JSON.stringify(
-      progress,
-      null,
-      2
-    )
-  );
-}
+export const loadDSAProgress = () => store.read();
+export const saveDSAProgress = progress => store.write(progress);

@@ -1,6 +1,6 @@
 import { BaseCapability } from "../BaseCapability.js";
 import { CapabilityResult } from "../CapabilityResult.js";
-import { loadTasks, saveTasks } from "../../../features/tasks/index.js";
+import { updateTasks } from "../../../features/tasks/taskStorage.js";
 import { incrementStat } from "../../../storage/statsStorage.js";
 
 /**
@@ -22,9 +22,7 @@ export class TaskCapability extends BaseCapability {
 
   async execute(context) {
     const taskText = context.prompt.replace(/add task/i, "").replace(/create task/i, "").trim() || context.prompt;
-    const tasks = await loadTasks();
-    tasks.push({ id: Date.now(), text: taskText, completed: false });
-    await saveTasks(tasks);
+    await updateTasks(tasks => [...tasks, { id: Date.now(), text: taskText, completed: false }]);
     await incrementStat("tasks_created");
 
     return CapabilityResult.create({

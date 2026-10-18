@@ -1,42 +1,10 @@
-import fs from "fs/promises";
+import { getStoragePath } from "../../storage/storagePath.js";
+import { createJsonFileStore } from "../../storage/jsonFile.js";
 
-import {
-  getStoragePath
-} from "../../storage/storagePath.js";
+const store = createJsonFileStore(getStoragePath("tasks.json"), {
+  fallbackValue: [], validate: Array.isArray, mode: 0o600,
+});
 
-const TASKS_FILE =
-  getStoragePath(
-    "tasks.json"
-  );
-
-export async function loadTasks() {
-
-  try {
-
-    const data =
-      await fs.readFile(
-        TASKS_FILE,
-        "utf-8"
-      );
-
-    return JSON.parse(data);
-
-  } catch {
-
-    return [];
-  }
-}
-
-export async function saveTasks(
-  tasks
-) {
-
-  await fs.writeFile(
-    TASKS_FILE,
-    JSON.stringify(
-      tasks,
-      null,
-      2
-    )
-  );
-}
+export const loadTasks = () => store.read();
+export const saveTasks = tasks => store.write(tasks);
+export const updateTasks = updater => store.update(updater);

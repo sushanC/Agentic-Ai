@@ -1,5 +1,5 @@
 export { default as settingsRoutes } from "./settingsRoutes.js";
-export { loadSettings, saveSettings } from "./settingsStorage.js";
+export { loadSettings, saveSettings, replaceSettings } from "./settingsStorage.js";
 export { getSettings, updateSettings } from "./settingsService.js";
 export { getSettingsController, updateSettingsController } from "./settingsController.js";
 

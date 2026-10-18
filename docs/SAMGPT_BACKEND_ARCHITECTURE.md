@@ -97,6 +97,6 @@ Phase 3 removed only unused `server.js` imports for `askAI`, `askGroqStream`, an
 
 `CapabilityLifecycle.run()` initializes once per capability instance, calls analyze, plan and execute, returns normalized `CapabilityResult`, and always calls cleanup in `finally`. `WorkflowExecutor` executes sequentially and skips dependents when a prerequisite failed or was skipped. It does not implement workflow cancellation, per-node timeout, parallel branches, retry policy, or resumable workflow persistence in the inspected implementation.
 
-Server starts with `app.listen(3001)` and initializes `voiceManager`; no configurable host/port or coordinated shutdown handler is evident. File writes are direct `writeFile` operations; there is no atomic-temp-file replacement or database transaction layer.
+Server starts with `app.listen(3001)` and initializes `voiceManager`; no configurable host/port or coordinated shutdown handler is evident. Phase 4 routes core JSON stores through `storage/jsonFile.js` for atomic single-file replacement and process-local serialized updates. Some generated text files, upload staging and screenshots remain outside that helper; there is no cross-process lock or database transaction layer. See [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md).
 
 See [request lifecycle](SAMGPT_REQUEST_LIFECYCLE.md), [capability/workflow](SAMGPT_CAPABILITY_WORKFLOW_ARCHITECTURE.md), and [security audit](SAMGPT_SECURITY_AND_RELIABILITY_AUDIT.md).

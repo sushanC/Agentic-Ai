@@ -1,5 +1,5 @@
 import { loadPDF, chunkText } from "./pdfParser.js";
-import { loadPDFMemory, savePDFMemory } from "./pdfStorage.js";
+import { loadPDFMemory, updatePDFMemory } from "./pdfStorage.js";
 import { getEmbedding, cosineSimilarity } from "../../services/embeddingService.js";
 import { askAI } from "../../services/ai.js";
 import { incrementStat } from "../../storage/statsStorage.js";
@@ -19,9 +19,10 @@ export async function uploadAndProcessPDF(filePath, originalName) {
     });
   }
 
-  const memory = await loadPDFMemory();
-  memory[originalName] = embeddedChunks;
-  await savePDFMemory(memory);
+  await updatePDFMemory(memory => {
+    memory[originalName] = embeddedChunks;
+    return memory;
+  });
 
   return { success: true, file: originalName };
 }
@@ -206,7 +207,6 @@ export async function handlePDF(userMessage) {
 
     try {
       const text = await loadPDF(pdfPath);
-      const pdfMemory = await loadPDFMemory();
       const chunks = chunkText(text);
       const embeddedChunks = [];
 
@@ -218,8 +218,10 @@ export async function handlePDF(userMessage) {
         });
       }
 
-      pdfMemory[pdfPath] = embeddedChunks;
-      await savePDFMemory(pdfMemory);
+      await updatePDFMemory(pdfMemory => {
+        pdfMemory[pdfPath] = embeddedChunks;
+        return pdfMemory;
+      });
 
       console.log("\n📄 PDF Loaded Successfully\n");
     } catch (err) {

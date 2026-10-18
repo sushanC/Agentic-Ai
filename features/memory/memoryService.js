@@ -12,6 +12,14 @@ export async function saveMemory(memory) {
   }
 }
 
+export async function replaceMemory(memory) {
+  return memoryManager.replaceLegacyProfile(memory);
+}
+
+export async function updateMemoryValue(key, updater) {
+  return memoryManager.updateSemanticValue(key, updater);
+}
+
 export async function deleteMemoryKey(key) {
   await memoryManager.delete(key, "semantic");
 }

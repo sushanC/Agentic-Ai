@@ -50,8 +50,8 @@ flowchart LR
 
 ## Persistence and settings
 
-`storage/storagePath.js` creates `~/.personal-agent/` and supplies paths. Persistence is plain JSON files for profile, settings, tasks, notes, history, summary, statistics, memory stores, pending confirmations, Google token, desktop history and more. PDF upload files are staged in repository-relative `uploads/`; the source tree also contains local documents/uploads. There is no database engine or schema migration system. Phase 1 hardens only pending-action and Google-token files with atomic replace, in-process update locks, and explicit malformed-JSON errors; both use mode `0600`. Other stores retain their existing error handling and write behavior.
+`storage/storagePath.js` creates `~/.personal-agent/` and supplies paths. Core JSON persistence now uses `storage/jsonFile.js` for atomic replacement, shape checks and process-local locking. PDF upload files are staged in current-working-directory-relative `uploads/`; there is no database engine or schema migration system. Locks do not coordinate separate server processes.
 
-`/backup` exports tasks, notes, memory, history, settings and stats; it does not include every storage category (for example pending actions, Google tokens, projects/preferences and PDF files). `/restore` accepts JSON shapes and writes selected categories without an explicit maximum structure/depth check in this route. Do not expose it to untrusted clients.
+`/backup` exports tasks, notes, semantic memory, history, settings and stats. It excludes pending actions, Google tokens, projects/preferences and PDF data/files, among other stores. `/restore` validates the full supported backup shape and size/depth before writes; it applies files sequentially and attempts reverse-order rollback on failure, so multi-file restore remains best-effort rather than crash-atomic. Backups contain personal content. See [storage and recovery](SAMGPT_STORAGE_AND_RECOVERY.md) for the verified inventory and limits.
 
 See [security audit](SAMGPT_SECURITY_AND_RELIABILITY_AUDIT.md).

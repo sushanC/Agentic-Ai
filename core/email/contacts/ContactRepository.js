@@ -1,4 +1,4 @@
-import { loadMemory, saveMemory } from "../../../features/memory/index.js";
+import { loadMemory, updateMemoryValue } from "../../../features/memory/index.js";
 
 /**
  * ContactRepository.js
@@ -13,12 +13,8 @@ export class ContactRepository {
    * @returns {Promise<Record<string, {name?: string, email: string, savedAt?: string, aliases?: string[], relationship?: string}>>}
    */
   static async loadContacts() {
-    try {
-      const memory = await loadMemory();
-      return memory.contacts || {};
-    } catch {
-      return {};
-    }
+    const memory = await loadMemory();
+    return memory.contacts || {};
   }
 
   /**
@@ -33,21 +29,22 @@ export class ContactRepository {
     if (!name || !email) return false;
 
     try {
-      const memory = await loadMemory();
-      if (!memory.contacts) memory.contacts = {};
-
-      const existing = memory.contacts[name.trim()] || {};
-
-      memory.contacts[name.trim()] = {
-        ...existing,
-        name: name.trim(),
-        email: email.trim(),
-        aliases: metadata.aliases || existing.aliases || [name.trim().toLowerCase()],
-        relationship: metadata.relationship || existing.relationship || "",
-        savedAt: new Date().toISOString()
-      };
-
-      await saveMemory(memory);
+      const cleanName = name.trim();
+      await updateMemoryValue("contacts", current => {
+        const contacts = current && typeof current === "object" && !Array.isArray(current) ? current : {};
+        const existing = contacts[cleanName] || {};
+        return {
+          ...contacts,
+          [cleanName]: {
+            ...existing,
+            name: cleanName,
+            email: email.trim(),
+            aliases: metadata.aliases || existing.aliases || [cleanName.toLowerCase()],
+            relationship: metadata.relationship || existing.relationship || "",
+            savedAt: new Date().toISOString()
+          }
+        };
+      });
       console.log("[ContactRepository] Contact saved");
       return true;
     } catch (err) {

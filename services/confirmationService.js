@@ -52,6 +52,7 @@ export function createConfirmationService({ storage = defaultStorage, executeToo
         missing: "This confirmation request was not found.",
         expired: "This confirmation request has expired.",
         already_claimed: "This action has already been claimed and cannot run again. Check its status before creating a new action.",
+        outcome_unknown: "This action may have run before the application restarted. Check the external service before creating a new action.",
       };
       return { success: false, code: claim.status.toUpperCase(), status: claim.status, message: messages[claim.status] };
     }
@@ -132,7 +133,7 @@ export function createConfirmationService({ storage = defaultStorage, executeToo
 
   async function listPending() {
     await storage.cleanExpired();
-    return (await storage.loadPendingActions()).filter(a => ["pending", "executing", "failed"].includes(a.status));
+    return (await storage.loadPendingActions()).filter(a => ["pending", "executing", "failed", "outcome_unknown"].includes(a.status));
   }
 
   return { createPending, confirmAction, cancelAction, listPending };

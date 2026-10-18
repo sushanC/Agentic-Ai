@@ -1,7 +1,12 @@
-import fs from "fs/promises";
 import { getStoragePath } from "../../../storage/storagePath.js";
+import { createJsonFileStore } from "../../../storage/jsonFile.js";
 
-const GRAPH_FILE = getStoragePath("relationship_graph.json");
+const graphFile = createJsonFileStore(getStoragePath("relationship_graph.json"), {
+  fallbackValue: {},
+  validate: value => value !== null && typeof value === "object" && !Array.isArray(value)
+    && Object.values(value).every(Array.isArray),
+  mode: 0o600,
+});
 
 /**
  * RelationshipGraph.js
@@ -19,19 +24,13 @@ export class RelationshipGraph {
 
   async initialize() {
     if (this.initialized) return;
-    try {
-      const data = await fs.readFile(GRAPH_FILE, "utf-8");
-      const json = JSON.parse(data);
-
-      for (const [subject, edges] of Object.entries(json)) {
-        const edgeSet = new Set();
-        for (const edge of edges) {
-          edgeSet.add(typeof edge === "string" ? { target: edge, relation: "related_to" } : edge);
-        }
-        this.graph.set(subject, edgeSet);
+    const json = await graphFile.read();
+    for (const [subject, edges] of Object.entries(json)) {
+      const edgeSet = new Set();
+      for (const edge of edges) {
+        edgeSet.add(typeof edge === "string" ? { target: edge, relation: "related_to" } : edge);
       }
-    } catch {
-      // File does not exist yet
+      this.graph.set(subject, edgeSet);
     }
     this.initialized = true;
   }
@@ -41,7 +40,7 @@ export class RelationshipGraph {
     for (const [subject, edgeSet] of this.graph.entries()) {
       json[subject] = Array.from(edgeSet);
     }
-    await fs.writeFile(GRAPH_FILE, JSON.stringify(json, null, 2));
+    await graphFile.write(json);
   }
 
   /**
@@ -67,9 +66,38 @@ export class RelationshipGraph {
     // Check for existing edge
     const exists = Array.from(set).some(e => e.target === o && e.relation === r);
     if (!exists) {
-      set.add({ target: o, relation: r });
-      await this._syncToDisk();
+      const edge = { target: o, relation: r };
+      set.add(edge);
+      try {
+        await this._syncToDisk();
+      } catch (error) {
+        set.delete(edge);
+        if (set.size === 0) this.graph.delete(s);
+        throw error;
+      }
     }
+  }
+
+  async removeRelationship(subject, object, relation = "related_to") {
+    if (!subject || !object) return false;
+    await this.initialize();
+    const s = String(subject).toLowerCase().trim();
+    const o = String(object).toLowerCase().trim();
+    const r = String(relation).toLowerCase().trim();
+    const edges = this.graph.get(s);
+    if (!edges) return false;
+    const edge = Array.from(edges).find(item => item.target === o && item.relation === r);
+    if (!edge) return false;
+    edges.delete(edge);
+    if (edges.size === 0) this.graph.delete(s);
+    try {
+      await this._syncToDisk();
+    } catch (error) {
+      if (!this.graph.has(s)) this.graph.set(s, edges);
+      edges.add(edge);
+      throw error;
+    }
+    return true;
   }
 
   /**

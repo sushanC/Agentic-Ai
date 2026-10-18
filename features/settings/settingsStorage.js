@@ -1,7 +1,11 @@
-import fs from "fs/promises";
 import { getStoragePath } from "../../storage/storagePath.js";
+import { createJsonFileStore } from "../../storage/jsonFile.js";
 
-const SETTINGS_FILE = getStoragePath("settings.json");
+const settingsFile = createJsonFileStore(getStoragePath("settings.json"), {
+  fallbackValue: {},
+  validate: value => value !== null && typeof value === "object" && !Array.isArray(value),
+  mode: 0o600,
+});
 
 /**
  * Default settings structure.
@@ -33,43 +37,35 @@ const DEFAULT_SETTINGS = {
 };
 
 export async function loadSettings() {
-  try {
-    const data = await fs.readFile(SETTINGS_FILE, "utf-8");
-    const parsed = JSON.parse(data);
-
-    return {
-      ...DEFAULT_SETTINGS,
-      ...parsed,
-      capabilityRoutes: {
-        ...DEFAULT_SETTINGS.capabilityRoutes,
-        ...(parsed.capabilityRoutes || {})
-      }
-    };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
+  const parsed = await settingsFile.read();
+  return {
+    ...DEFAULT_SETTINGS,
+    ...parsed,
+    capabilityRoutes: {
+      ...DEFAULT_SETTINGS.capabilityRoutes,
+      ...(parsed.capabilityRoutes || {})
+    }
+  };
 }
 
 export async function saveSettings(settings) {
-  let existing = { ...DEFAULT_SETTINGS };
-  try {
-    const data = await fs.readFile(SETTINGS_FILE, "utf-8");
-    existing = JSON.parse(data);
-  } catch {
-    // First save — use defaults
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    throw new TypeError("Settings must be an object.");
   }
-
-  const merged = {
+  return settingsFile.update(existing => ({
+    ...DEFAULT_SETTINGS,
     ...existing,
     ...settings,
     capabilityRoutes: {
       ...(existing.capabilityRoutes || {}),
       ...(settings.capabilityRoutes || {})
     }
-  };
+  }));
+}
 
-  await fs.writeFile(
-    SETTINGS_FILE,
-    JSON.stringify(merged, null, 2)
-  );
+export async function replaceSettings(settings) {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    throw new TypeError("Settings must be an object.");
+  }
+  return settingsFile.write(settings);
 }

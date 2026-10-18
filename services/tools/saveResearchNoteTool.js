@@ -1,5 +1,5 @@
 import { getResearch } from "../researchCache.js";
-import { loadNotes, saveNotes } from "../../features/notes/index.js";
+import { updateNotes } from "../../features/notes/index.js";
 import { incrementStat } from "../../storage/statsStorage.js";
 import { addActivity } from "../../storage/activityStorage.js";
 
@@ -11,13 +11,10 @@ export class SaveResearchNoteTool {
       return "⚠️ No research result to save. Run research first.";
     }
 
-    const notes = await loadNotes();
-    notes.push({
+    await updateNotes(notes => [...notes, {
       id: Date.now(),
       content: report
-    });
-
-    await saveNotes(notes);
+    }]);
     await incrementStat("notes_saved");
     addActivity("Saved research note");
 

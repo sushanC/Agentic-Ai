@@ -1,36 +1,11 @@
-import fs from "fs/promises";
+import path from "path";
+import { createJsonFileStore } from "./jsonFile.js";
 
-const FILE =
-  "./dsa_session.json";
+const store = createJsonFileStore(path.resolve("./dsa_session.json"), {
+  fallbackValue: {},
+  validate: value => value !== null && typeof value === "object" && !Array.isArray(value),
+  mode: 0o600,
+});
 
-export async function loadDSASession() {
-
-  try {
-
-    const data =
-      await fs.readFile(
-        FILE,
-        "utf-8"
-      );
-
-    return JSON.parse(data);
-
-  } catch {
-
-    return {};
-  }
-}
-
-export async function saveDSASession(
-  session
-) {
-
-  await fs.writeFile(
-    FILE,
-    JSON.stringify(
-      session,
-      null,
-      2
-    )
-  );
-}
+export const loadDSASession = () => store.read();
+export const saveDSASession = session => store.write(session);

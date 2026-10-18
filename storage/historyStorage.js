@@ -1,40 +1,12 @@
-import fs from "fs/promises";
+import { getStoragePath } from "./storagePath.js";
+import { createJsonFileStore } from "./jsonFile.js";
 
-import {
-  getStoragePath
-} from "./storagePath.js";
+const store = createJsonFileStore(getStoragePath("chat_history.json"), {
+  fallbackValue: [],
+  validate: Array.isArray,
+  mode: 0o600,
+});
 
-const HISTORY_FILE =
-  getStoragePath("chat_history.json");
-
-export async function loadHistory() {
-
-  try {
-
-    const data =
-      await fs.readFile(
-        HISTORY_FILE,
-        "utf-8"
-      );
-
-    return JSON.parse(data);
-
-  } catch {
-
-    return [];
-  }
-}
-
-export async function saveHistory(
-  history
-) {
-
-  await fs.writeFile(
-    HISTORY_FILE,
-    JSON.stringify(
-      history,
-      null,
-      2
-    )
-  );
-}
+export const loadHistory = () => store.read();
+export const saveHistory = history => store.write(history);
+export const updateHistory = updater => store.update(updater);

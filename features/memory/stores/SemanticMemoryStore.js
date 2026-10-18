@@ -1,10 +1,7 @@
-import fs from "fs/promises";
 import { BaseMemoryStore } from "./BaseMemoryStore.js";
 import { MemoryObject } from "../model/MemoryObject.js";
 import { MEMORY_CONFIG } from "../config/MemoryConfig.js";
-import { getStoragePath } from "../../../storage/storagePath.js";
-
-const PROFILE_FILE = getStoragePath("profile.json");
+import { loadProfile, updateProfile, updateProfileValue, removeProfileKey, saveProfile } from "../../../storage/profileStorage.js";
 
 /**
  * SemanticMemoryStore.js
@@ -22,34 +19,23 @@ export class SemanticMemoryStore extends BaseMemoryStore {
 
   async initialize() {
     if (this.initialized) return;
-    try {
-      const data = await fs.readFile(PROFILE_FILE, "utf-8");
-      const json = JSON.parse(data);
-
-      for (const [key, value] of Object.entries(json)) {
-        const memoryObj = MemoryObject.create({
-          id: `sem_${key}`,
-          type: "semantic",
-          category: "user_fact",
-          content: { key, value },
-          importance: 0.85,
-        });
-        this.memoryMap.set(key, memoryObj);
-      }
-    } catch {
-      // File does not exist or empty — start fresh
+    const json = await loadProfile();
+    for (const [key, value] of Object.entries(json)) {
+      const memoryObj = MemoryObject.create({
+        id: `sem_${key}`,
+        type: "semantic",
+        category: "user_fact",
+        content: { key, value },
+        importance: 0.85,
+      });
+      this.memoryMap.set(key, memoryObj);
     }
     this.initialized = true;
   }
 
   async _syncToDisk() {
-    const json = {};
-    for (const [key, memObj] of this.memoryMap.entries()) {
-      if (memObj.content && memObj.content.value !== undefined) {
-        json[key] = memObj.content.value;
-      }
-    }
-    await fs.writeFile(PROFILE_FILE, JSON.stringify(json, null, 2));
+    const json = await this.getLegacyObject();
+    await saveProfile(json);
   }
 
   async store(item) {
@@ -78,8 +64,8 @@ export class SemanticMemoryStore extends BaseMemoryStore {
       accessCount: existing ? existing.accessCount + 1 : 1,
     });
 
+    await updateProfile({ [key]: value });
     this.memoryMap.set(key, obj);
-    await this._syncToDisk();
     return obj;
   }
 
@@ -91,9 +77,10 @@ export class SemanticMemoryStore extends BaseMemoryStore {
   async delete(keyOrId) {
     await this.initialize();
     const cleanKey = keyOrId.replace(/^sem_/, "");
-    const deleted = this.memoryMap.delete(cleanKey);
+    const deleted = this.memoryMap.has(cleanKey);
     if (deleted) {
-      await this._syncToDisk();
+      await removeProfileKey(cleanKey);
+      this.memoryMap.delete(cleanKey);
     }
     return deleted;
   }
@@ -104,8 +91,8 @@ export class SemanticMemoryStore extends BaseMemoryStore {
   }
 
   async clear() {
+    await saveProfile({});
     this.memoryMap.clear();
-    await this._syncToDisk();
   }
 
   async getAll() {
@@ -123,5 +110,41 @@ export class SemanticMemoryStore extends BaseMemoryStore {
       result[key] = memObj.content.value;
     }
     return result;
+  }
+
+  async replaceLegacyObject(profile) {
+    if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+      throw new TypeError("Semantic profile must be an object.");
+    }
+    await saveProfile(profile);
+    this.memoryMap.clear();
+    for (const [key, value] of Object.entries(profile)) {
+      this.memoryMap.set(key, MemoryObject.create({
+        id: `sem_${key}`,
+        type: "semantic",
+        category: "user_fact",
+        content: { key, value },
+        importance: 0.85,
+      }));
+    }
+    this.initialized = true;
+  }
+
+  async updateValue(key, updater) {
+    if (typeof updater !== "function") throw new TypeError("Semantic value update requires a function.");
+    await this.initialize();
+    const value = await updateProfileValue(key, updater);
+    const existing = this.memoryMap.get(key);
+    this.memoryMap.set(key, MemoryObject.create({
+      id: existing?.id || `sem_${key}`,
+      type: "semantic",
+      category: existing?.category || "user_fact",
+      content: { key, value },
+      importance: existing?.importance || 0.85,
+      createdAt: existing?.createdAt || Date.now(),
+      updatedAt: Date.now(),
+      accessCount: existing ? existing.accessCount + 1 : 1,
+    }));
+    return value;
   }
 }

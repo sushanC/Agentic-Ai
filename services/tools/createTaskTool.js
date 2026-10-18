@@ -1,4 +1,4 @@
-import { loadTasks, saveTasks } from "../../features/tasks/index.js";
+import { updateTasks } from "../../features/tasks/taskStorage.js";
 import { incrementStat } from "../../storage/statsStorage.js";
 import { addActivity } from "../../storage/activityStorage.js";
 
@@ -8,14 +8,11 @@ export class CreateTaskTool {
       ? action.input
       : action.input?.text || action.input?.content || "";
 
-    const tasks = await loadTasks();
-    tasks.push({
+    await updateTasks(tasks => [...tasks, {
       id: Date.now(),
       text: taskText,
       completed: false
-    });
-
-    await saveTasks(tasks);
+    }]);
     await incrementStat("tasks_created");
     addActivity(`Created task: ${taskText}`);
 

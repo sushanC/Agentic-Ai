@@ -40,8 +40,51 @@ export async function readJsonFile(filePath, fallbackValue) {
   }
 }
 
+function cloneFallback(value) {
+  if (value === undefined || value === null || typeof value !== "object") return value;
+  return structuredClone(value);
+}
+
+/** Create a small JSON store with shape validation and serialized mutations. */
+export function createJsonFileStore(filePath, { fallbackValue, validate = () => true, mode } = {}) {
+  const resolved = path.resolve(filePath);
+
+  function assertValid(value, operation) {
+    if (!validate(value)) {
+      const err = new Error(`Stored JSON has an invalid shape: ${path.basename(resolved)}`);
+      err.code = operation === "read" ? "JSON_STORAGE_CORRUPT" : "JSON_STORAGE_INVALID";
+      throw err;
+    }
+  }
+
+  async function read() {
+    const value = await readJsonFile(resolved, cloneFallback(fallbackValue));
+    assertValid(value, "read");
+    return value;
+  }
+
+  async function write(value) {
+    assertValid(value, "write");
+    return withJsonFileLock(resolved, () => writeJsonFile(resolved, value, { mode }));
+  }
+
+  async function update(mutator) {
+    if (typeof mutator !== "function") throw new TypeError("JSON store update requires a function.");
+    return withJsonFileLock(resolved, async () => {
+      const current = await readJsonFile(resolved, cloneFallback(fallbackValue));
+      assertValid(current, "read");
+      const next = await mutator(current);
+      assertValid(next, "write");
+      await writeJsonFile(resolved, next, { mode });
+      return next;
+    });
+  }
+
+  return { filePath: resolved, read, write, update };
+}
+
 /** Write JSON through a same-directory temporary file and atomic rename. */
-export async function writeJsonFile(filePath, value, { mode } = {}) {
+export async function writeJsonFile(filePath, value, { mode, renameFile = fs.rename } = {}) {
   const resolved = path.resolve(filePath);
   const dir = path.dirname(resolved);
   const tempPath = path.join(dir, `.${path.basename(resolved)}.${process.pid}.${randomUUID()}.tmp`);
@@ -55,7 +98,7 @@ export async function writeJsonFile(filePath, value, { mode } = {}) {
     await handle.sync();
     await handle.close();
     handle = null;
-    await fs.rename(tempPath, resolved);
+    await renameFile(tempPath, resolved);
     if (mode !== undefined) await fs.chmod(resolved, mode).catch(() => {});
   } catch (err) {
     if (handle) await handle.close().catch(() => {});
