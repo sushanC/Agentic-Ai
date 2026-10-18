@@ -5,6 +5,6 @@
  */
 import { routeRequest as coreRouteRequest } from "../core/routing/ToolRouter.js";
 
-export async function routeRequest(message, toolContext = "chat") {
-  return await coreRouteRequest(message, toolContext);
+export async function routeRequest(message, toolContext = "chat", options = {}) {
+  return await coreRouteRequest(message, toolContext, options);
 }

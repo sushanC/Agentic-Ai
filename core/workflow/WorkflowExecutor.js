@@ -107,18 +107,40 @@ export class WorkflowExecutor {
    */
   _buildCapabilityContext(node, wCtx) {
     const composedPrompt = wCtx.buildNodePrompt(node);
+    const capability = node.requiredCapability;
+    const shared = {
+      prompt: composedPrompt,
+      toolContext: wCtx.toolContext,
+      runtimeState: wCtx.runtimeState,
+      requestContext: wCtx.requestContext,
+      workingMemory: wCtx.getAllNodeOutputs(),
+    };
+
+    if (capability === "chat") {
+      return new CapabilityContext({
+        ...shared,
+        semanticMemory: wCtx.semanticMemory,
+        history: wCtx.history,
+        summary: wCtx.summary,
+        userPreferences: wCtx.userPreferences,
+        contextSnapshot: wCtx.contextSnapshot,
+      });
+    }
+
+    if (capability === "email") {
+      const emailMemory = Object.fromEntries(Object.entries(wCtx.semanticMemory || {})
+        .filter(([key]) => ["name", "user_name", "contacts", "email_preferences", "email_context"].includes(key)));
+      return new CapabilityContext({ ...shared, semanticMemory: emailMemory, userPreferences: wCtx.userPreferences });
+    }
+
+    if (capability === "calendar") {
+      const calendarMemory = Object.fromEntries(Object.entries(wCtx.semanticMemory || {})
+        .filter(([key]) => ["timezone", "calendar_events", "schedule_preferences"].includes(key)));
+      return new CapabilityContext({ ...shared, semanticMemory: calendarMemory, userPreferences: wCtx.userPreferences });
+    }
 
     return new CapabilityContext({
-      prompt:          composedPrompt,
-      toolContext:     wCtx.toolContext,
-      semanticMemory:  wCtx.semanticMemory,
-      history:         wCtx.history,
-      summary:         wCtx.summary,
-      pdfMemory:       wCtx.pdfMemory,
-      runtimeState:    wCtx.runtimeState,
-      userPreferences: wCtx.userPreferences,
-      // Inject upstream outputs as workingMemory so capabilities can inspect them
-      workingMemory:   wCtx.getAllNodeOutputs(),
+      ...shared,
     });
   }
 

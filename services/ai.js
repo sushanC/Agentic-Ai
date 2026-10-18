@@ -645,12 +645,19 @@ export async function askGroqStream(prompt) {
 // Main non-streaming AI entry point. Powered by Context Intelligence Engine.
 // Voice Mode passes tool="voice" to inject the Voice system prompt.
 // ─────────────────────────────────────────────────────────────────────────────
-export async function askAI(prompt, tool = "chat") {
-  const result = await runtimeManager.execute({ prompt, tool });
+export async function askAI(prompt, tool = "chat", options = {}) {
+  const result = await runtimeManager.execute({ prompt, tool, ...options });
   if (result.modelUsed) {
     lastModelUsed = result.modelUsed;
   }
   return result.answer;
+}
+
+/** Unified runtime stream entry point used by ChatCapability and HTTP streaming. */
+export async function askAIStream(prompt, tool = "chat", options = {}) {
+  const result = await runtimeManager.executeStream({ prompt, tool, ...options });
+  if (result.modelConfig) lastModelUsed = result.modelConfig;
+  return { stream: result.stream, modelUsed: result.modelConfig };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

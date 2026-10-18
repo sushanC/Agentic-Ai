@@ -6,6 +6,7 @@ import { optimizeContext } from "./TokenBudgetManager.js";
 import { buildPrompt } from "./PromptBuilder.js";
 import { buildSummaryContext } from "./SummaryContextBuilder.js";
 import { emitDevEvent } from "../developerBridge.js";
+import { getCurrentRequestContext } from "../../core/request/RequestContext.js";
 
 export {
   detectIntent,
@@ -40,19 +41,20 @@ export async function runCiePipeline(
   provider,
   systemPrompt,
   pdfContext = "",
-  settings = {}
+  settings = {},
+  contextSnapshot = null
 ) {
-  // 1. Intent Detection
-  const intent = await detectIntent(prompt, tool, settings);
-
-  // 2. Memory Retrieval
-  const memory = await retrieveRelevantMemory(prompt, intent, settings);
-
-  // 3. History Selection
-  const history = await getDynamicHistory(intent, settings);
-
-  // 4. Summary Compression
-  const summary = await getCompressedSummary(intent, settings);
+  // Provider candidates share one request-level retrieval snapshot; only token
+  // fitting below varies by provider. Legacy callers may still assemble here.
+  const hasSnapshot = contextSnapshot && Object.hasOwn(contextSnapshot, "intent");
+  const intent = hasSnapshot ? contextSnapshot.intent : await detectIntent(prompt, tool, settings);
+  const [memory, history, summary] = hasSnapshot
+    ? [contextSnapshot.memory || {}, contextSnapshot.history || [], contextSnapshot.summary || ""]
+    : await Promise.all([
+      retrieveRelevantMemory(prompt, intent, settings),
+      getDynamicHistory(intent, settings),
+      getCompressedSummary(intent, settings),
+    ]);
 
   // 5. Token Budget Management
   const optimizationResult = optimizeContext({
@@ -71,24 +73,21 @@ export async function runCiePipeline(
   try {
     emitDevEvent('MemoryRetrieved', {
       keys:       Object.keys(memory || {}).filter(k => k !== '_scores'),
-      scores:     memory?._scores || {},
+      scores:     Object.keys(memory?._scores || {}).length,
       injected:   optimizationResult.memoryKeys || [],
-      rawMemory:  memory || {}
+      memoryCount: Object.keys(memory || {}).filter(k => k !== '_scores').length,
+      requestId: getCurrentRequestContext()?.requestId || null,
     });
 
     emitDevEvent('PromptBuilt', {
-      systemPrompt,
-      memoryBlock:  memory && Object.keys(memory).length > 0
-        ? `User Profile:\n\n${JSON.stringify(memory, null, 2)}`
-        : "",
-      summaryBlock: summary || "",
-      historyBlock: history && history.length > 0
-        ? history.map(m => `${m.role}: ${m.content}`).join("\n")
-        : "",
-      pdfContext:   pdfContext || "",
-      finalPrompt:  optimizationResult.promptText,
+      systemPromptLength: String(systemPrompt || "").length,
+      summaryLength: String(summary || "").length,
+      historyCount: Array.isArray(history) ? history.length : 0,
+      pdfContextLength: String(pdfContext || "").length,
+      finalPromptLength: String(optimizationResult.promptText || "").length,
       estimatedTokens: optimizationResult.estimatedTokens,
       tokenBreakdown: optimizationResult.tokenBreakdown,
+      requestId: getCurrentRequestContext()?.requestId || null,
     });
   } catch (err) {
     // Silent fail for developer events

@@ -34,7 +34,10 @@ export class EmailCapability extends BaseCapability {
       toolContext: context.toolContext,
       conversationId: context.runtimeState?.conversationId,
       confirmationId: context.runtimeState?.confirmationId,
-      attachments
+      attachments,
+      semanticMemory: context.semanticMemory,
+      userPreferences: context.userPreferences,
+      requestContext: context.requestContext,
     });
 
     const emailResult = await emailManager.handle(emailContext);

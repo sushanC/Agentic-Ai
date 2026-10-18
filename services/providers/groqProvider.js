@@ -68,7 +68,7 @@ export const groqProvider = {
         temperature: options.temperature ?? 0.3,
         max_tokens: options.maxTokens ?? 4096,
         stream: true,
-      });
+      }, { signal: options.signal });
 
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content;

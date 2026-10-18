@@ -1,5 +1,6 @@
 import { ERROR_CODES } from "./ErrorCodes.js";
 import { getUserErrorMessage, DEFAULT_USER_ERROR_MESSAGE } from "./UserErrorMessages.js";
+import { getCurrentRequestContext } from "../request/RequestContext.js";
 
 /**
  * ErrorNormalizer.js
@@ -11,7 +12,9 @@ import { getUserErrorMessage, DEFAULT_USER_ERROR_MESSAGE } from "./UserErrorMess
  *   success: false,
  *   code: string,
  *   userMessage: string,       // Safe for display to user / frontend
- *   technicalMessage: string,  // For developer console / diagnostics logging only
+ *   technicalMessage: string,  // Sanitized compatibility field
+ *   diagnostics: object,        // Safe error type/code only
+ *   requestId: string|null,
  *   retryable: boolean,
  *   requiresReauth: boolean,
  *   authUrl: string|null,
@@ -34,14 +37,17 @@ export class ErrorNormalizer {
     // Detect structured error code
     const code = ErrorNormalizer._determineErrorCode(rawCode, rawMessage, error);
 
-    // Technical message for developer logs (full details, unredacted for logs)
-    const technicalMessage = rawMessage || "An unknown system error occurred.";
+    const errorName = typeof error?.name === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(error.name)
+      ? error.name
+      : "Error";
+    const technicalMessage = `${errorName}:${code}`;
 
     // Determine user-safe message
     let userMessage = error?.userMessage || context?.userMessage || null;
     if (!userMessage || ErrorNormalizer._containsSensitiveDetails(userMessage)) {
       userMessage = getUserErrorMessage(code);
     }
+    if (typeof userMessage === "string" && userMessage.length > 500) userMessage = getUserErrorMessage(code);
 
     // Auth & reauth flags
     const requiresReauth = Boolean(
@@ -53,7 +59,8 @@ export class ErrorNormalizer {
       code === ERROR_CODES.AUTH_REQUIRED
     );
 
-    const authUrl = error?.authUrl || context?.authUrl || null;
+    const candidateAuthUrl = error?.authUrl || context?.authUrl || null;
+    const authUrl = typeof candidateAuthUrl === "string" && candidateAuthUrl.length <= 4096 ? candidateAuthUrl : null;
 
     // Retryable flag
     const retryable = error?.retryable !== undefined
@@ -68,6 +75,8 @@ export class ErrorNormalizer {
       code,
       userMessage,
       technicalMessage,
+      diagnostics: { errorName, errorCode: code },
+      requestId: context?.requestId || getCurrentRequestContext()?.requestId || null,
       retryable,
       requiresReauth,
       authUrl,
@@ -83,6 +92,9 @@ export class ErrorNormalizer {
   static _determineErrorCode(rawCode, rawMessage, error) {
     if (rawCode && ERROR_CODES[rawCode]) {
       return ERROR_CODES[rawCode];
+    }
+    if (typeof rawCode === "string" && /^[A-Z0-9_-]{1,64}$/.test(rawCode)) {
+      return rawCode;
     }
 
     const msg = (rawMessage || "").toLowerCase();
@@ -123,8 +135,11 @@ export class ErrorNormalizer {
     if (typeof text !== "string") return false;
     if (text.includes("at ") && text.includes(".js:")) return true; // Stack trace line
     if (text.includes("/home/") || text.includes("/Users/") || text.includes("C:\\")) return true; // File path
-    if (text.includes("sk-") || text.includes("gsk_") || text.includes("GOCSPX")) return true; // API key / OAuth secret
+    if (text.includes("sk-") || text.includes("gsk_") || text.includes("gocspx")) return true; // API key / OAuth secret
     if (text.includes("invalid_grant") || text.includes("OAuth2")) return true;
+    if (/\b(?:bearer\s+)?(?:ya29\.|gh[pousr]_|xox[baprs]-|AIza)[A-Za-z0-9_-]{8,}/i.test(text)) return true;
+    if (/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(text)) return true;
+    if (/\b(?:provider|api) error\b/i.test(text)) return true;
     return false;
   }
 }

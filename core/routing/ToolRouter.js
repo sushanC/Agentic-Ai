@@ -1,5 +1,5 @@
-import { capabilityManager } from "../capabilities/CapabilityManager.js";
 import { askModelCie } from "../../services/ai.js";
+import { agentRuntime } from "../agent/AgentRuntime.js";
 
 /**
  * Determine whether a text prompt is a desktop control request.
@@ -92,6 +92,6 @@ export async function decideTool(message) {
  * @param {string} [toolContext="chat"] - Tool context identifier ("chat", "voice", etc.)
  * @returns {Promise<{tool: string, answer: any, executedSteps?: Array}>}
  */
-export async function routeRequest(message, toolContext = "chat") {
-  return await capabilityManager.executeRequest(message, toolContext);
+export async function routeRequest(message, toolContext = "chat", options = {}) {
+  return agentRuntime.run(message, toolContext, options);
 }

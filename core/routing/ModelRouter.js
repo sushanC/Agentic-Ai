@@ -21,11 +21,11 @@ const TOOL_INTENT_OVERRIDES = Object.freeze({
  * @param {string} tool
  * @returns {Promise<number>}
  */
-async function estimateTotalTokens(message, tool) {
+async function estimateTotalTokens(message, tool, contextSnapshot = null) {
   let charLength = (message?.length || 0) + (SYSTEM_PROMPT?.length || 0);
 
   try {
-    const context = await ContextAssembly.assembleContext(message);
+    const context = contextSnapshot || await ContextAssembly.assembleContext(message, { toolContext: tool, capabilities: ["chat"] });
     if (context.memory) {
       charLength += JSON.stringify(context.memory).length;
     }
@@ -58,9 +58,10 @@ export async function decideModel(
   tool = "chat",
   overrides = {},
   _healthScores = {},
-  settings = {}
+  settings = {},
+  contextSnapshot = null
 ) {
-  const estimatedTokens = await estimateTotalTokens(message, tool);
+  const estimatedTokens = await estimateTotalTokens(message, tool, contextSnapshot);
 
   let intent, confidence, secondaryIntent;
 

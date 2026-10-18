@@ -23,7 +23,8 @@ export class EmailContext {
     attachments = [],
     semanticMemory = {},
     workingMemory = {},
-    userPreferences = {}
+    userPreferences = {},
+    requestContext = null
   } = {}) {
     this.prompt = String(prompt || "");
     this.promptLower = this.prompt.toLowerCase().trim();
@@ -34,6 +35,7 @@ export class EmailContext {
     this.semanticMemory = semanticMemory;
     this.workingMemory = workingMemory;
     this.userPreferences = userPreferences;
+    this.requestContext = requestContext;
     this.timestamp = Date.now();
   }
 }

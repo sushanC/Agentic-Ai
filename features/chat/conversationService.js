@@ -3,34 +3,20 @@ import {
   saveHistory
 } from "./chatStorage.js";
 
-export async function addMessage(
-  role,
-  content
-) {
-
-  const history =
-    await loadHistory();
-
-  history.push({
-    role,
-    content,
-    timestamp:
-      Date.now()
-  });
-
-  await saveHistory(
-    history
-  );
+export function createConversationService(storage = { loadHistory, saveHistory }) {
+  return {
+    async addMessage(role, content) {
+      const history = await storage.loadHistory();
+      history.push({ role, content, timestamp: Date.now() });
+      await storage.saveHistory(history);
+    },
+    async getRecentHistory(limit = 20) {
+      const history = await storage.loadHistory();
+      return history.slice(-limit);
+    },
+  };
 }
 
-export async function getRecentHistory(
-  limit = 20
-) {
-
-  const history =
-    await loadHistory();
-
-  return history.slice(
-    -limit
-  );
-}
+const defaultConversationService = createConversationService();
+export const addMessage = (...args) => defaultConversationService.addMessage(...args);
+export const getRecentHistory = (...args) => defaultConversationService.getRecentHistory(...args);

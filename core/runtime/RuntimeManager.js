@@ -11,6 +11,8 @@ import { SYSTEM_PROMPT } from "../../services/systemPrompt.js";
 import { VOICE_SYSTEM_PROMPT } from "../../features/voice/voiceSystemPrompt.js";
 import { loadSettings } from "../../features/settings/index.js";
 import { resolveModel } from "../registry/ModelRegistry.js";
+import { ContextAssembly } from "../context/ContextAssembly.js";
+import { getCurrentRequestContext } from "../request/RequestContext.js";
 
 /**
  * RuntimeManager.js
@@ -47,6 +49,13 @@ export class RuntimeManager {
     if (!prompt) throw new Error("RuntimeManager: Prompt cannot be empty.");
 
     const settings = await loadSettings();
+    const requestContext = params.requestContext || getCurrentRequestContext();
+    const contextSnapshot = params.contextSnapshot || await ContextAssembly.assembleContext(prompt, {
+      toolContext: tool,
+      capabilities: ["chat"],
+      requestContext,
+      settings,
+    });
     const isVoiceMode = tool === "voice";
     const effectiveSystemPrompt = systemPromptOverride || (isVoiceMode ? VOICE_SYSTEM_PROMPT : SYSTEM_PROMPT);
 
@@ -54,7 +63,7 @@ export class RuntimeManager {
     if (model && model !== "auto") {
       modelConfig = resolveModel(model.toLowerCase());
     } else {
-      modelConfig = await decideModel(prompt, tool, settings.capabilityRoutes || {}, {}, settings);
+      modelConfig = await decideModel(prompt, tool, settings.capabilityRoutes || {}, {}, settings, contextSnapshot);
     }
 
     this.diagnostics.info("RuntimeManager", `Starting request execution for tool "${tool}" with primary model ${modelConfig.displayName}`);
@@ -64,7 +73,9 @@ export class RuntimeManager {
       tool,
       modelConfig,
       systemPrompt: effectiveSystemPrompt,
-      settings
+      settings,
+      contextSnapshot,
+      requestContext,
     });
 
     const formattedAnswer = this.responsePipeline.process(result.response, { toolContext: tool });
@@ -87,8 +98,16 @@ export class RuntimeManager {
    */
   async executeStream(params = {}) {
     const { prompt, tool = "chat", model, systemPromptOverride } = params;
+    if (!prompt) throw new Error("RuntimeManager: Prompt cannot be empty.");
 
     const settings = await loadSettings();
+    const requestContext = params.requestContext || getCurrentRequestContext();
+    const contextSnapshot = params.contextSnapshot || await ContextAssembly.assembleContext(prompt, {
+      toolContext: tool,
+      capabilities: ["chat"],
+      requestContext,
+      settings,
+    });
     const isVoiceMode = tool === "voice";
     const effectiveSystemPrompt = systemPromptOverride || (isVoiceMode ? VOICE_SYSTEM_PROMPT : SYSTEM_PROMPT);
 
@@ -96,18 +115,21 @@ export class RuntimeManager {
     if (model && model !== "auto") {
       modelConfig = resolveModel(model.toLowerCase());
     } else {
-      modelConfig = await decideModel(prompt, tool, settings.capabilityRoutes || {}, {}, settings);
+      modelConfig = await decideModel(prompt, tool, settings.capabilityRoutes || {}, {}, settings, contextSnapshot);
     }
 
     this.diagnostics.info("RuntimeManager", `Starting streaming execution for tool "${tool}" with primary model ${modelConfig.displayName}`);
 
-    return this.requestPipeline.executeStream({
+    const stream = this.requestPipeline.executeStream({
       prompt,
       tool,
       modelConfig,
       systemPrompt: effectiveSystemPrompt,
-      settings
+      settings,
+      contextSnapshot,
+      signal: params.signal,
     });
+    return { stream, modelConfig };
   }
 
   /**

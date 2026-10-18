@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import { createLocalApiGuard, isAllowedLocalOrigin, logSafeError, safeErrorCode } from "./services/httpSecurity.js";
+import { requestContextMiddleware } from "./core/request/RequestContext.js";
 
 import {
   getModelRegistry,
@@ -14,7 +15,6 @@ import {
 
 import { getModelHealth, getCooldownRemaining, getModelHealthScore } from "./services/modelSelection/HealthScorer.js";
 
-import { askAI, askGroqStream, getLastModelUsed } from "./services/ai.js";
 import { SYSTEM_PROMPT } from "./services/systemPrompt.js";
 import { handleVoice, voiceManager, voiceRoutes } from "./features/voice/index.js";
 
@@ -106,6 +106,7 @@ const app = express();
 
 const configuredOrigins = (process.env.SAMGPT_ALLOWED_ORIGINS || "")
   .split(",").map(value => value.trim()).filter(Boolean);
+app.use(requestContextMiddleware);
 app.use(createLocalApiGuard(configuredOrigins));
 app.use(cors({
   origin(origin, callback) {

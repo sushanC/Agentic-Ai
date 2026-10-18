@@ -1,15 +1,15 @@
 import express from "express";
 
-import {
-  postChat,
-  postStreamChat,
-  getHistory
-} from "./chatController.js";
+import { createChatController } from "./chatController.js";
 
-const router = express.Router();
+export function createChatRouter(controller = createChatController()) {
+  const router = express.Router();
 
-router.post("/", postChat);
-router.post("/stream", postStreamChat);
-router.get("/history", getHistory);
+  router.post("/", controller.postChat);
+  router.post("/stream", controller.postStreamChat);
+  router.get("/history", controller.getHistory);
+  return router;
+}
 
+const router = createChatRouter();
 export default router;

@@ -31,6 +31,8 @@ export class CapabilityContext {
     pdfMemory = {},
     runtimeState = {},
     userPreferences = {},
+    requestContext = null,
+    contextSnapshot = null,
   } = {}) {
     this.prompt = String(prompt || "");
     this.promptLower = this.prompt.toLowerCase();
@@ -42,6 +44,8 @@ export class CapabilityContext {
     this.pdfMemory = pdfMemory;
     this.runtimeState = runtimeState;
     this.userPreferences = userPreferences;
+    this.requestContext = requestContext;
+    this.contextSnapshot = contextSnapshot;
     this.timestamp = Date.now();
   }
 

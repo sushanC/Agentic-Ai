@@ -1,4 +1,5 @@
 import { developerEvents } from "../events/DeveloperEvents.js";
+import { getCurrentRequestContext } from "../request/RequestContext.js";
 
 /**
  * CapabilityDiagnostics.js
@@ -16,7 +17,8 @@ export class CapabilityDiagnostics {
     this.events.emitDevEvent("CapabilitySelected", {
       capability: capabilityName,
       score,
-      prompt: prompt.slice(0, 100),
+      promptLength: String(prompt || "").length,
+      requestId: getCurrentRequestContext()?.requestId || null,
     });
   }
 
@@ -24,7 +26,8 @@ export class CapabilityDiagnostics {
     this.events.emitDevEvent("CapabilityLifecycle", {
       stage,
       capability: capabilityName,
-      ...details,
+      detailKeys: Object.keys(details || {}),
+      requestId: getCurrentRequestContext()?.requestId || null,
     });
   }
 
@@ -39,7 +42,8 @@ export class CapabilityDiagnostics {
   logError(capabilityName, error) {
     this.events.emitDevEvent("CapabilityError", {
       capability: capabilityName,
-      error: error.message || error,
+      errorCode: error?.code || error?.errorCode || error?.name || "CAPABILITY_FAILED",
+      requestId: getCurrentRequestContext()?.requestId || null,
     });
   }
 }

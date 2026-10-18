@@ -37,6 +37,7 @@ export const googleProvider = {
           systemInstruction: options.systemPrompt,
           temperature: options.temperature,
           maxOutputTokens: options.maxTokens,
+          abortSignal: options.signal,
         }
       });
       return response.text;

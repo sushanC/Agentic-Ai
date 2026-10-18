@@ -9,6 +9,21 @@ const HISTORY_FILE =
     "chat_history.json"
   );
 
+export function createChatStorage(filePath) {
+  return {
+    async loadHistory() {
+      try {
+        return JSON.parse(await fs.readFile(filePath, "utf-8"));
+      } catch {
+        return [];
+      }
+    },
+    async saveHistory(history) {
+      await fs.writeFile(filePath, JSON.stringify(history, null, 2), { mode: 0o600 });
+    },
+  };
+}
+
 export async function loadHistory() {
 
   try {

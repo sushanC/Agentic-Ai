@@ -54,12 +54,19 @@ export const ollamaProvider = {
           num_predict: options.maxTokens,
         }
       });
-
-      for await (const part of responseStream) {
-        const text = part.message?.content;
-        if (text) {
-          yield text;
+      const abortStream = () => responseStream.abort();
+      options.signal?.addEventListener("abort", abortStream, { once: true });
+      try {
+        if (options.signal?.aborted) responseStream.abort();
+        for await (const part of responseStream) {
+          if (options.signal?.aborted) return;
+          const text = part.message?.content;
+          if (text) {
+            yield text;
+          }
         }
+      } finally {
+        options.signal?.removeEventListener("abort", abortStream);
       }
     } catch (err) {
       throw classifyProviderError("ollama", err);

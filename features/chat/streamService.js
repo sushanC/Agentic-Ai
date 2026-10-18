@@ -1,133 +1,145 @@
-import {
-  addMessage
-} from "./conversationService.js";
+import { addMessage } from "./conversationService.js";
+import { updateMemory } from "../memory/index.js";
+import { agentRuntime } from "../../core/agent/AgentRuntime.js";
+import { updateSummary } from "../../services/summaryService.js";
+import { incrementStat } from "../../storage/statsStorage.js";
+import { ErrorNormalizer } from "../../core/errors/ErrorNormalizer.js";
+import { getLastModelUsed } from "../../services/ai.js";
 
-import {
-  updateMemory
-} from "../memory/index.js";
+const SAFE_STREAM_ERROR = "Sorry for the inconvenience. I wasn't able to complete that request. Please try again.";
 
-import {
-  routeRequest
-} from "../../services/toolRouter.js";
+function modelTimeline(model, status = "running") {
+  const modelInfo = model || {};
+  return {
+    model: modelInfo.name || modelInfo.modelId || "unknown",
+    modelName: modelInfo.displayName || modelInfo.name || "Assistant",
+    provider: modelInfo.provider || "unknown",
+    steps: [{ name: modelInfo.displayName || modelInfo.name || "Assistant", status, isModel: true }],
+  };
+}
 
-import {
-  askGroqStream,
-  getLastModelUsed
-} from "../../services/ai.js";
+function writeTimeline(res, payload) {
+  res.write(`__TIMELINE__:${JSON.stringify(payload)}\n`);
+}
 
-import {
-  updateSummary
-} from "../../services/summaryService.js";
+export function createStreamChatService(dependencies = {}) {
+  const storeMessage = dependencies.addMessage || ((...args) => addMessage(...args));
+  const updateUserMemory = dependencies.updateMemory || ((...args) => updateMemory(...args));
+  const runtime = dependencies.agentRuntime;
+  const refreshSummary = dependencies.updateSummary || ((...args) => updateSummary(...args));
+  const countMessage = dependencies.incrementStat || ((...args) => incrementStat(...args));
+  const normalizeError = dependencies.normalizeError || ((...args) => ErrorNormalizer.normalize(...args));
+  const lastModelUsed = dependencies.getLastModelUsed;
 
-import {
-  incrementStat
-} from "../../storage/statsStorage.js";
-
-export async function handleStreamChatService(message, res) {
-  // Run memory extraction ONCE
-  await updateMemory(message);
-
-  const result = await routeRequest(message);
-
-  // Tool-based results (agent, web, pdf, task, note, memory)
-  // — return immediately without streaming
-  if (result.tool !== "chat") {
-    const modelInfo = getLastModelUsed();
-    const timelinePayload = {
-      model: modelInfo.name,
-      modelName: modelInfo.displayName,
-      provider: modelInfo.provider,
-      steps: [
-        ...(result.executedSteps || []),
-        { name: modelInfo.displayName, status: "completed", isModel: true }
-      ]
-    };
-
-    if (result.tool === "confirmation") {
-      res.setHeader("Content-Type", "text/plain");
-      res.setHeader("Transfer-Encoding", "chunked");
-
-      timelinePayload.steps = [
-        ...(result.executedSteps || []),
-        { name: "confirmation", status: "completed" }
-      ];
-      res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
-      res.write("__CONFIRMATION__:" + JSON.stringify(result.answer));
-      return res.end();
+  return async function handleStreamChatService(message, res, options = {}) {
+  await updateUserMemory(message);
+  const controller = new AbortController();
+  let disconnected = false;
+  let userMessageStored = false;
+  const onClose = () => {
+    if (!res.writableEnded) {
+      disconnected = true;
+      controller.abort();
     }
-
-    if (result.tool === "waiting_input") {
-      const waitingPayload =
-        result.answer && typeof result.answer === "object"
-          ? result.answer
-          : { status: "waiting_input", error: "invalid payload" };
-
-      console.log("[streamService] Returning an email input request");
-
-      res.setHeader("Content-Type", "text/plain");
-      res.setHeader("Transfer-Encoding", "chunked");
-
-      timelinePayload.steps = [
-        ...(result.executedSteps || []),
-        { name: "waiting_input", status: "completed" }
-      ];
-      res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
-      res.write("__WAITING_INPUT__:" + JSON.stringify(waitingPayload));
-      return res.end();
-    }
-
-    await addMessage("user", message);
-    await addMessage("assistant", result.answer);
-    await incrementStat("messages");
-
-    res.setHeader("Content-Type", "text/plain");
-    res.setHeader("Transfer-Encoding", "chunked");
-    res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
-    return res.end();
-  }
-
-  // Normal chat — stream via Groq
-  res.setHeader("Content-Type", "text/plain");
-  res.setHeader("Transfer-Encoding", "chunked");
-
-  await addMessage("user", message);
-
-
-  let fullResponse = "";
+  };
+  res.once?.("close", onClose);
 
   try {
-    const stream = await askGroqStream(message);
+    let execution;
+    try {
+      execution = await (runtime || agentRuntime).runStream(message, "chat", {
+        ...options,
+        signal: controller.signal,
+        beforeContext: async () => {
+          await storeMessage("user", message);
+          userMessageStored = true;
+        },
+      });
+    } catch (err) {
+      if (disconnected || controller.signal.aborted || res.destroyed) return res.end();
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Transfer-Encoding", "chunked");
+      const normalized = normalizeError(err, { requestId: options.requestContext?.requestId });
+      res.write(normalized.userMessage || SAFE_STREAM_ERROR);
+      if (!userMessageStored) await storeMessage("user", message);
+      await storeMessage("assistant", normalized.userMessage || SAFE_STREAM_ERROR);
+      await refreshSummary();
+      await countMessage("messages");
+      return res.end();
+    }
 
-    const modelInfo = getLastModelUsed();
-    const timelinePayload = {
-      model: modelInfo.name,
-      modelName: modelInfo.displayName,
-      provider: modelInfo.provider,
-      steps: [
-        { name: modelInfo.displayName, status: "running", isModel: true }
-      ]
-    };
-    res.write(`__TIMELINE__:${JSON.stringify(timelinePayload)}\n`);
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Transfer-Encoding", "chunked");
 
-    for await (const chunk of stream) {
-      const content = chunk.choices?.[0]?.delta?.content;
+    if (execution.type === "result") {
+      const result = execution.result || {};
+      const model = result.modelUsed || result.metadata?.model || (lastModelUsed || getLastModelUsed)();
+      const timeline = modelTimeline(model, "completed");
 
-      if (content) {
-        fullResponse += content;
-        res.write(content);
+      if (result.tool === "confirmation" || result.answer?.status === "confirmation_required") {
+        timeline.steps = [...(result.executedSteps || []), { name: "confirmation", status: "completed" }];
+        writeTimeline(res, timeline);
+        res.write(`__CONFIRMATION__:${JSON.stringify(result.answer)}`);
+        return res.end();
+      }
+      if (result.tool === "waiting_input" || result.answer?.status === "waiting_input") {
+        timeline.steps = [...(result.executedSteps || []), { name: "waiting_input", status: "completed" }];
+        writeTimeline(res, timeline);
+        res.write(`__WAITING_INPUT__:${JSON.stringify(result.answer)}`);
+        return res.end();
+      }
+
+      if (result.success === false) {
+        const normalized = normalizeError(result.error || result.metadata || "CAPABILITY_FAILED", {
+          capability: result.capability,
+          tool: result.tool,
+          requestId: options.requestContext?.requestId,
+        });
+        timeline.steps = [...(result.executedSteps || []), { name: result.tool || "request", status: "failed" }];
+        writeTimeline(res, timeline);
+        res.write(normalized.userMessage || SAFE_STREAM_ERROR);
+        return res.end();
+      }
+
+      const answer = typeof result.answer === "string" ? result.answer : JSON.stringify(result.answer ?? "");
+      await storeMessage("user", message);
+      await storeMessage("assistant", answer);
+      await refreshSummary();
+      await countMessage("messages");
+      writeTimeline(res, timeline);
+      return res.end();
+    }
+
+    const { stream, modelUsed } = execution;
+    let fullResponse = "";
+    writeTimeline(res, modelTimeline(modelUsed));
+    try {
+      for await (const chunk of stream) {
+        if (disconnected || controller.signal.aborted || res.destroyed) break;
+        if (!chunk) continue;
+        fullResponse += chunk;
+        res.write(chunk);
+      }
+    } catch (err) {
+      if (!disconnected && !controller.signal.aborted && !res.destroyed) {
+        const normalized = normalizeError(err, { requestId: options.requestContext?.requestId });
+        const safe = fullResponse ? "\n\nSorry for the interruption. I wasn't able to finish generating that response. Please try again." : normalized.userMessage || SAFE_STREAM_ERROR;
+        fullResponse += safe;
+        res.write(safe);
       }
     }
-  } catch (err) {
-    console.error("[streamService] Stream execution failed", { code: err.code || "STREAM_ERROR" });
-    if (!fullResponse || fullResponse.trim() === "") {
-      fullResponse = "Sorry for the inconvenience. I wasn't able to complete that request. Please try again.";
-      res.write(fullResponse);
+
+    if (!disconnected && !controller.signal.aborted) {
+      await storeMessage("assistant", fullResponse);
+      await refreshSummary();
+      await countMessage("messages");
     }
+    return res.end();
+  } finally {
+    res.removeListener?.("close", onClose);
   }
-
-  await addMessage("assistant", fullResponse);
-  await updateSummary();
-  await incrementStat("messages");
-
-  res.end();
+  };
 }
+
+const defaultStreamChatService = createStreamChatService();
+export const handleStreamChatService = (...args) => defaultStreamChatService(...args);

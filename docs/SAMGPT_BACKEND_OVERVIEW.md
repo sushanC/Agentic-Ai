@@ -6,7 +6,7 @@ Audit basis: source in the checked-out working tree on 2026-10-16. Several backe
 
 This is a Node.js ES-module backend with an Express API, JSON-file persistence under `~/.personal-agent/`, an AI runtime that selects among configured providers, a capability framework, a sequential workflow planner/executor, and feature modules for chat, memory, tasks, notes, PDFs, voice, email, calendar, vision, desktop, web, research and code. The repository does not contain the React frontend, Electron main/preload bridge, or renderer sources described in the brief. `main.js` is a Node readline CLI; `server.js` includes child-process message handling for voice, but this is not an Electron IPC implementation.
 
-The newer capability and workflow architecture is registered and is on the ordinary chat request path. It calls existing feature services rather than replacing them. AI generation is still mediated by `services/ai.js` and `RuntimeManager`; provider selection, retries, and fallback also exist in older CIE/model-selection code. Streaming chat takes a separate path through `askGroqStream`. The resulting overlap is the main reliability and auditability concern.
+The capability and workflow architecture handles ordinary chat requests through `AgentRuntime`. It calls existing feature services rather than replacing them. Standard and streaming AI generation use `services/ai.js` and `RuntimeManager`; legacy `askModelCie` and `askGroqStream` entry points remain for older callers. The overlapping legacy provider paths are a remaining reliability and auditability concern.
 
 The user-stated desired Gemini → Groq → Ollama fallback is not established as the live system-wide order. Model entries have per-model fallback chains; Gemini's registry entry lists Groq, GPT-OSS/OpenRouter and Ollama. `ProviderPool` then appends enabled providers and ranks fallback candidates. A separate `FallbackPolicy.js` describes a canonical chain but is not imported by the runtime. Ollama is implemented and registered, but availability depends on model configuration and runtime health.
 
@@ -36,9 +36,9 @@ flowchart LR
 
 ## Main execution path
 
-For ordinary non-streaming HTTP chat, `POST /chat` calls `handleStandardChat`, stores the user message, updates extracted memory, invokes `routeRequest`, stores the assistant answer and updates a summary. The compatibility route invokes `CapabilityManager`, which creates a `CapabilityContext` and calls `WorkflowEngine`. The planner makes a single-node workflow for a simple request or splits recognized connector phrases into a sequential dependency chain. The executor runs each capability through `CapabilityLifecycle` and composes the terminal result.
+For ordinary non-streaming HTTP chat, `POST /chat` calls `handleStandardChat`, stores the user message, updates extracted memory, invokes `routeRequest`, stores the assistant answer and updates a summary. The compatibility route delegates to `AgentRuntime`, which assembles one scoped context snapshot and passes it to `CapabilityManager` and `WorkflowEngine`. The planner makes a single-node workflow for a simple request or splits recognized connector phrases into a sequential dependency chain. The executor runs each capability through `CapabilityLifecycle` and composes the terminal result.
 
-`ContextAssembly` is used by `AgentRuntime`, but `services/toolRouter.routeRequest` calls `CapabilityManager` directly; therefore this primary chat route does not pass the separately assembled `ContextAssembly` payload. `CapabilityManager` defaults the assembled context to `{}`. Individual AI calls use the CIE pipeline for their own context assembly. See [request lifecycle](SAMGPT_REQUEST_LIFECYCLE.md).
+`ContextAssembly` runs once through `AgentRuntime` for standard and streaming chat. Its snapshot is reused by model token estimation and by each provider candidate's CIE prompt fitting. `askModelCie` and other legacy callers may still assemble context through their own CIE path. See [request lifecycle](SAMGPT_REQUEST_LIFECYCLE.md).
 
 ## Current implementation assessment
 

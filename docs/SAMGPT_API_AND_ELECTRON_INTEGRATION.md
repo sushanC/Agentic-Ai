@@ -26,11 +26,11 @@
 | `/audio/devices` | GET | Audio device listing |
 | `/desktop/history`, `/desktop/system-status`, `/desktop/screenshot/:filename` | GET | Desktop history, system snapshot, validated screenshot serving |
 
-Nested route modules are the source of truth; see `features/*/*Routes.js` and `server.js` for exact controller behavior. Model health and model-test routes can make provider network calls. `POST /models/test/:key` sends an external test prompt to the configured model.
+Nested route modules are the source of truth; see `features/*/*Routes.js` and `server.js` for exact controller behavior. The chat route/controller contract has mocked loopback integration coverage; other routes have not been exercised end-to-end. Model health and model-test routes can make provider network calls. `POST /models/test/:key` sends an external test prompt to the configured model.
 
 ## Request/response and streaming contracts
 
-`POST /chat` expects JSON `{message}` and returns `{reply}`. Validation is mostly handled by downstream code and route controller errors are generic. `/chat/stream` is chunked `text/plain`, not SSE. It writes marker lines (`__TIMELINE__:`, `__CONFIRMATION__:`, `__WAITING_INPUT__:`) mixed with plain response text. Clients must parse that custom protocol. `POST /email/provide-input` uses the same text/plain confirmation marker. `/confirm`, CRUD routes and status routes use different JSON shapes; there is no shared API error schema.
+`POST /chat` expects a non-empty string `{message}` and returns `{reply}`; missing, non-string, or blank messages receive HTTP 400 `{error:"message is required"}`. Chat requests receive or generate an `X-Request-Id` response header before local-origin checks, so rejected requests can be correlated too. The ID is not an authorization credential. Application/provider errors handled by the chat service retain the `{reply}` shape with safe text; controller-level failures retain the existing generic 500 `{error}` body. `/chat/stream` is chunked `text/plain`, not SSE. It writes marker lines (`__TIMELINE__:`, `__CONFIRMATION__:`, `__WAITING_INPUT__:`) mixed with plain response text. Clients must parse that custom protocol. `POST /email/provide-input` uses the same text/plain confirmation marker. `/confirm`, CRUD routes and status routes use different JSON shapes; there is no shared API error schema.
 
 ## Electron, frontend and IPC
 
@@ -40,7 +40,7 @@ No React renderer, Electron `BrowserWindow`, `contextBridge`, preload script, `i
 flowchart LR
   Client[External client / frontend not present] -->|HTTP JSON| Express[server.js :3001]
   Express --> Routes[Express routers and controllers]
-  Routes --> Chat[toolRouter -> CapabilityManager -> WorkflowEngine]
+  Routes --> Chat[toolRouter -> AgentRuntime -> CapabilityManager -> WorkflowEngine]
   Chat --> Runtime[services/ai -> RuntimeManager -> providers]
   Routes --> JSON[JSON storage]
   Parent[Optional Node parent process] <-->|process message events| Server[server.js voice controls]

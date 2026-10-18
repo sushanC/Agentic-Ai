@@ -32,6 +32,8 @@ export class WorkflowContext {
     pdfMemory      = {},
     runtimeState   = {},
     userPreferences = {},
+    requestContext = null,
+    contextSnapshot = null,
   } = {}) {
     // Original request fields — read-only throughout execution
     this.prompt          = String(prompt);
@@ -42,6 +44,8 @@ export class WorkflowContext {
     this.pdfMemory       = pdfMemory;
     this.runtimeState    = runtimeState;
     this.userPreferences = userPreferences;
+    this.requestContext = requestContext;
+    this.contextSnapshot = contextSnapshot;
 
     // Runtime mutable state
     /** @type {Map<string, object>} nodeId → CapabilityResult */
@@ -149,7 +153,7 @@ export class WorkflowContext {
       toolContext: this.toolContext,
       nodeOutputCount: this._nodeOutputs.size,
       variableCount:   this._variables.size,
-      variables:  Object.fromEntries(this._variables),
+      requestId: this.requestContext?.requestId || null,
       ageMs:      Date.now() - this._createdAt,
     };
   }

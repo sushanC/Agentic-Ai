@@ -75,6 +75,8 @@ export class WorkflowEngine {
         pdfMemory:       capabilityContext.pdfMemory,
         runtimeState:    capabilityContext.runtimeState,
         userPreferences: capabilityContext.userPreferences,
+        requestContext:  capabilityContext.requestContext,
+        contextSnapshot: capabilityContext.contextSnapshot,
       });
 
       // Step 4 — Execution: walk graph, invoke capabilities, propagate context
@@ -108,7 +110,7 @@ export class WorkflowEngine {
             retryable:      false,
             requiresReauth: false,
           },
-          diagnostics: { error: err.message, violations: err.violations },
+          diagnostics: { errorCode: normalizedValidation.code, violationCount: err.violations?.length || 0 },
         });
       }
 
@@ -133,7 +135,7 @@ export class WorkflowEngine {
         },
         diagnostics: {
           technicalMessage: normalized.technicalMessage,
-          errorStack:       err.stack,
+          errorCode: normalized.code,
         },
       });
     }

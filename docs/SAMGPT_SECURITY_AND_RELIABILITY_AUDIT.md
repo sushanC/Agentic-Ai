@@ -4,7 +4,7 @@ Scope: static source inspection of the checked-out working tree on 2026-10-16 pl
 
 ## Phase 1 disposition (2026-10-16)
 
-The original findings below describe the pre-Phase-1 baseline. Phase 1 changes are now present in the working tree and verified by `npm test`; the implemented controls and remaining limits are summarized here.
+The original findings below describe the pre-hardening baseline. Phase 1 and Phase 2 changes are now present in the working tree and verified by `npm test`; implemented controls and remaining limits are summarized here.
 
 - The API binds to `127.0.0.1:3001`; middleware also rejects non-loopback peers and unapproved browser origins. Set `SAMGPT_ALLOWED_ORIGINS` to comma-separated exact trusted HTTP(S) origins for a local browser client. This is a local single-user boundary, not authentication for network or multi-user use. `Origin: null` and Electron `file://` origins are rejected.
 - Pending actions use serialized in-process JSON updates and atomic file replacement. Confirmation claims `pending → executing` before tool execution; terminal `completed` and `failed` records cannot run again. A crash after claim fails closed and requires manual reconciliation. The lock is process-local, so multiple server processes are not safe.
@@ -42,7 +42,7 @@ The baseline included raw error, request, recipient and IPC logging. Phase 1 cha
 
 ### Medium: Provider fallback contract differs from the documented intended order
 
-`FallbackPolicy.js` states Groq → Gemini → GPT-OSS/OpenRouter → Ollama, while the requested goal was Gemini primary → Groq → Ollama. The file is not used by runtime. Model registry entries contain differing fallback chains; `ProviderPool` adds enabled providers and ranks them. `askGroqStream` and legacy `askModelCie` implement their own model fallback chains. The `scratch/test_error_fallback_system.js` tests the canonical helper in isolation, not actual `ProviderPool` ordering or a live request. This raises risk of inconsistent order and retries across request modes.
+`FallbackPolicy.js` states Groq → Gemini → GPT-OSS/OpenRouter → Ollama, while the requested goal was Gemini primary → Groq → Ollama. The file is not used by runtime. Model registry entries contain differing fallback chains; `ProviderPool` adds enabled providers and ranks them. `askGroqStream` and legacy `askModelCie` retain their own model fallback chains, but HTTP chat streaming now uses `RequestPipeline.executeStream`. Mock regression tests cover fallback before the first chunk and prohibit switching after partial output. Production candidate ordering and live provider failures remain unverified.
 
 **Recommendation:** consolidate to one runtime-owned fallback policy; preserve user-configured primary, define eligible failure classes, cap retry/fallback attempts, avoid retrying permanent auth/config/validation errors, and add injected-provider tests that assert the actual candidate execution order for both standard and streaming APIs.
 
@@ -66,21 +66,21 @@ Most application JSON stores still use their existing persistence behavior. Phas
 
 ### Low/Medium: Request input and upload bounds are not consistently visible at server boundary
 
-`server.js` uses default `express.json()` and multer disk destination `uploads/`; PDF routes accept an uploaded file. Route-level validation exists in some modules, but there is no central size/rate limit or error mapping configured at initialization. The `/restore` route writes caller-provided collections/objects with only broad type checks. Exact impact depends on local/network exposure and downstream parsers.
+`server.js` uses default `express.json()` and multer disk destination `uploads/`; PDF routes accept an uploaded file. The chat controller now rejects missing, non-string and blank chat messages, but there is no central body-size/rate limit or error mapping configured at initialization. The `/restore` route writes caller-provided collections/objects with only broad type checks. Exact impact depends on local/network exposure and downstream parsers.
 
 **Recommendation:** apply explicit body/upload limits, MIME/signature and parser constraints; schema validate restore and all side-effect requests; clean temporary uploads on every outcome and define retention.
 
-### Low/Medium: Runtime has overlapping provider, memory and error systems
+### Low/Medium: Legacy runtime entry points still coexist with the canonical chat lifecycle
 
-The modern runtime, legacy CIE/provider fallback, separate stream code, `AgentRuntime` context path and regular chat compatibility path overlap. `ErrorNormalizer` is not universal; thrown and structured errors differ between HTTP routes and stream protocol. This makes it harder to guarantee one fallback/error/diagnostics policy.
+Standard and streaming HTTP chat now pass through `AgentRuntime`, share one context snapshot, and use `RuntimeManager`/`RequestPipeline`. Legacy `askModelCie` and `askGroqStream` remain callable by older features. Other HTTP APIs also retain their distinct response shapes, and stream errors still use the marker-based text protocol rather than a universal JSON envelope.
 
-**Recommendation:** after this documentation baseline, make a separately reviewed reliability plan to converge the execution entry points and error contract; preserve compatibility until callers are migrated.
+**Recommendation:** migrate remaining direct legacy callers only after their specialized output/side-effect behavior has mocked regression coverage; preserve the current chat response contracts until client evidence supports changes.
 
 ## Error contract observed
 
 `core/errors/ErrorCodes.js`, `ErrorNormalizer.js`, `UserErrorMessages.js` define a structured error system with code, user message, retryable/auth metadata. `CapabilityResult` and `WorkflowResult` have `success`/answer/metadata fields. Email and calendar result classes have their own statuses and metadata. Legacy provider errors use custom `type`, `code`, `status`, and message fields. HTTP controllers variously return `{error}`, `{success:false,message}`, generic `{reply}`, raw result or text markers; streaming uses `text/plain`. These contracts are not normalized consistently.
 
-Provider retry policy does classify common transient failures vs auth/invalid request, and `RequestPipeline` tracks failed candidates in a per-request set to avoid circular attempts in that path. But error normalization occurs at different layers, `FallbackPolicy` tests don't show production path, and stream behavior diverges after any output has reached the client. Do not assume all application/domain errors avoid model fallback in every legacy path.
+Provider retry policy does classify common transient failures vs auth/invalid request, and `RequestPipeline` tracks failed candidates in a per-request set to avoid circular attempts in that path. Non-provider errors now bubble without provider retry/health updates on this path. `FallbackPolicy` tests still do not establish production candidate order, and legacy CIE paths have separate classification behavior.
 
 ```mermaid
 flowchart TD
@@ -89,7 +89,7 @@ flowchart TD
   Retry -->|success| Format[ResponsePipeline / capability result]
   Retry -->|exhausted| Candidate[Try next eligible provider candidate]
   Candidate -->|success| Format
-  Candidate -->|all failed| Normalize[ErrorNormalizer or legacy thrown error]
+  Candidate -->|all failed| Normalize[ErrorNormalizer / workflow safe result]
   Classify -->|Validation / auth / permission / app error| Domain[Feature-specific result or throw]
   Domain --> Normalize
   Normalize --> Workflow[Workflow node failed; dependent nodes skipped]

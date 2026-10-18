@@ -3,6 +3,8 @@ import { retryManager } from "./RetryManager.js";
 import { fallbackManager } from "./FallbackManager.js";
 import { diagnostics } from "./Diagnostics.js";
 import { runCiePipeline } from "../../services/cie/index.js";
+import { ContextAssembly } from "../context/ContextAssembly.js";
+import { getCurrentRequestContext } from "../request/RequestContext.js";
 
 /**
  * RequestPipeline.js
@@ -21,6 +23,14 @@ import { runCiePipeline } from "../../services/cie/index.js";
  * To add a new provider: register it in ProviderPool. Zero changes here.
  */
 export class RequestPipeline {
+  constructor({ providerPool: pool = providerPool, retryManager: retries = retryManager, fallbackManager: fallback = fallbackManager, diagnostics: logger = diagnostics, runCie = runCiePipeline, contextAssembly = ContextAssembly } = {}) {
+    this.providerPool = pool;
+    this.retryManager = retries;
+    this.fallbackManager = fallback;
+    this.diagnostics = logger;
+    this.runCie = runCie;
+    this.contextAssembly = contextAssembly;
+  }
   /**
    * Execute a non-streaming AI generation request through retries and fallbacks.
    *
@@ -32,22 +42,29 @@ export class RequestPipeline {
    * @param {object} [params.settings={}] - User settings
    * @returns {Promise<{response: string, modelConfig: object, cieResult: object, latencyMs: number}>}
    */
-  async executeRequest({ prompt, tool = "chat", modelConfig, systemPrompt, settings = {} }) {
+  async executeRequest({ prompt, tool = "chat", modelConfig, systemPrompt, settings = {}, contextSnapshot = null }) {
     if (!prompt) throw new Error("Request prompt cannot be empty.");
     if (!modelConfig) throw new Error("Model configuration must be provided.");
 
-    const candidates = fallbackManager.getCandidates(modelConfig);
+    const requestContext = getCurrentRequestContext();
+    const sharedContext = contextSnapshot || await this.contextAssembly.assembleContext(prompt, {
+      toolContext: tool,
+      capabilities: ["chat"],
+      requestContext,
+      settings,
+    });
+    const candidates = this.fallbackManager.getCandidates(modelConfig);
     const failedKeys = new Set();
     const startTime = Date.now();
     let lastError = null;
 
-    diagnostics.info("RequestPipeline", `Starting non-streaming request. Primary: ${modelConfig.displayName}. Total candidates: ${candidates.length}.`);
+    this.diagnostics.info("RequestPipeline", `Starting non-streaming request. Primary: ${modelConfig.displayName}. Total candidates: ${candidates.length}.`);
 
     while (true) {
-      const activeCandidate = fallbackManager.selectNextCandidate(candidates, failedKeys);
+      const activeCandidate = this.fallbackManager.selectNextCandidate(candidates, failedKeys);
 
       if (!activeCandidate) {
-        diagnostics.error("RequestPipeline", "All provider candidates exhausted.", {
+        this.diagnostics.error("RequestPipeline", "All provider candidates exhausted.", {
           totalAttempted: failedKeys.size,
           failedKeys: [...failedKeys],
         });
@@ -58,17 +75,17 @@ export class RequestPipeline {
       const modelKey    = activeCandidate.name || activeCandidate.key || providerKey;
 
       // Resolve provider from registry — zero hardcoding
-      const provider = providerPool.getProvider(providerKey);
+      const provider = this.providerPool.getProvider(providerKey);
 
       if (!provider) {
-        diagnostics.warn("RequestPipeline", `Provider "${providerKey}" is not registered in ProviderPool. Skipping.`);
+        this.diagnostics.warn("RequestPipeline", `Provider "${providerKey}" is not registered in ProviderPool. Skipping.`);
         failedKeys.add(modelKey);
         failedKeys.add(providerKey);
         continue;
       }
 
       try {
-        const cieResult = await runCiePipeline(prompt, tool, provider, systemPrompt, "", settings);
+        const cieResult = await this.runCie(prompt, tool, provider, systemPrompt, "", settings, sharedContext);
 
         const { responseText, latencyMs } = await this._executeCandidate({
           candidate: activeCandidate,
@@ -79,7 +96,7 @@ export class RequestPipeline {
           isStream: false,
         });
 
-        diagnostics.info("RequestPipeline", `Request completed via ${activeCandidate.displayName} in ${latencyMs}ms.`, {
+        this.diagnostics.info("RequestPipeline", `Request completed via ${activeCandidate.displayName} in ${latencyMs}ms.`, {
           provider: providerKey,
           model: activeCandidate.modelId,
           latencyMs,
@@ -94,10 +111,12 @@ export class RequestPipeline {
 
       } catch (err) {
         lastError = err;
+        if (!err?.shouldFallback || !err?.errorType) throw err;
         failedKeys.add(modelKey);
         failedKeys.add(providerKey);
-        diagnostics.warn("RequestPipeline", `Candidate ${activeCandidate.displayName} failed completely. Falling back.`, {
-          error: err.message,
+        this.diagnostics.warn("RequestPipeline", `Candidate ${activeCandidate.displayName} failed completely. Falling back.`, {
+          errorType: err.errorType,
+          errorCode: err.code || null,
           provider: providerKey,
         });
       }
@@ -114,19 +133,27 @@ export class RequestPipeline {
    * @param {object} params
    * @returns {AsyncGenerator<string>} Streamed response text chunks
    */
-  async *executeStream({ prompt, tool = "chat", modelConfig, systemPrompt, settings = {} }) {
-    const candidates = fallbackManager.getCandidates(modelConfig);
+  async *executeStream({ prompt, tool = "chat", modelConfig, systemPrompt, settings = {}, contextSnapshot = null, signal } = {}) {
+    const requestContext = getCurrentRequestContext();
+    const sharedContext = contextSnapshot || await this.contextAssembly.assembleContext(prompt, {
+      toolContext: tool,
+      capabilities: ["chat"],
+      requestContext,
+      settings,
+    });
+    const candidates = this.fallbackManager.getCandidates(modelConfig);
     const failedKeys = new Set();
     let lastError = null;
 
-    diagnostics.info("RequestPipeline", `Starting streaming request. Primary: ${modelConfig.displayName}. Total candidates: ${candidates.length}.`);
+    this.diagnostics.info("RequestPipeline", `Starting streaming request. Primary: ${modelConfig.displayName}. Total candidates: ${candidates.length}.`);
 
     // Stream path uses the same candidate iterator as executeRequest
     while (true) {
-      const activeCandidate = fallbackManager.selectNextCandidate(candidates, failedKeys);
+      if (signal?.aborted) return;
+      const activeCandidate = this.fallbackManager.selectNextCandidate(candidates, failedKeys);
 
       if (!activeCandidate) {
-        diagnostics.error("RequestPipeline", "All provider candidates exhausted.", {
+        this.diagnostics.error("RequestPipeline", "All provider candidates exhausted.", {
           totalAttempted: failedKeys.size,
           failedKeys: [...failedKeys],
         });
@@ -139,10 +166,10 @@ export class RequestPipeline {
       const modelKey    = activeCandidate.name || activeCandidate.key || providerKey;
 
       // Resolve provider from registry — zero hardcoding
-      const provider = providerPool.getProvider(providerKey);
+      const provider = this.providerPool.getProvider(providerKey);
 
       if (!provider || typeof provider.stream !== "function") {
-        diagnostics.debug("RequestPipeline", `Provider "${providerKey}" does not support streaming. Skipping.`);
+        this.diagnostics.debug("RequestPipeline", `Provider "${providerKey}" does not support streaming. Skipping.`);
         failedKeys.add(modelKey);
         failedKeys.add(providerKey);
         continue;
@@ -151,7 +178,7 @@ export class RequestPipeline {
       let yieldedAny = false;
 
       try {
-        const cieResult = await runCiePipeline(prompt, tool, provider, systemPrompt, "", settings);
+        const cieResult = await this.runCie(prompt, tool, provider, systemPrompt, "", settings, sharedContext);
 
         for await (const chunk of this._executeCandidate({
           candidate: activeCandidate,
@@ -160,6 +187,7 @@ export class RequestPipeline {
           systemPrompt,
           settings,
           isStream: true,
+          signal,
         })) {
           if (chunk) {
             yieldedAny = true;
@@ -169,31 +197,33 @@ export class RequestPipeline {
 
         if (yieldedAny) {
           // Stream completed successfully
-          diagnostics.info("RequestPipeline", `Stream completed via ${activeCandidate.displayName}.`);
+          this.diagnostics.info("RequestPipeline", `Stream completed via ${activeCandidate.displayName}.`);
           return;
         }
 
         // Provider returned no chunks — try next candidate
-        diagnostics.warn("RequestPipeline", `${activeCandidate.displayName} yielded no stream chunks. Trying next candidate.`);
+        this.diagnostics.warn("RequestPipeline", `${activeCandidate.displayName} yielded no stream chunks. Trying next candidate.`);
         failedKeys.add(modelKey);
         failedKeys.add(providerKey);
 
       } catch (err) {
         lastError = err;
+        if (signal?.aborted || err?.code === "REQUEST_CANCELLED") return;
+        if (!err?.shouldFallback || !err?.errorType) throw err;
 
         if (yieldedAny) {
           // Chunks already sent to client — cannot switch providers mid-stream
           // Yield safe termination message chunk so stream terminates gracefully
-          diagnostics.warn("RequestPipeline", `Stream error after partial yield from ${activeCandidate.displayName}. Cannot fall back mid-stream. Terminating gracefully.`, {
-            error: err.message,
+          this.diagnostics.warn("RequestPipeline", `Stream error after partial yield from ${activeCandidate.displayName}. Cannot fall back mid-stream. Terminating gracefully.`, {
+            errorType: err.errorType,
           });
           yield "\n\nSorry for the interruption. I wasn't able to finish generating that response. Please try again.";
           return;
         }
 
         // No chunks yet — fallback is allowed
-        diagnostics.warn("RequestPipeline", `Stream attempt failed for ${activeCandidate.displayName} before any chunks. Falling back.`, {
-          error: err.message,
+        this.diagnostics.warn("RequestPipeline", `Stream attempt failed for ${activeCandidate.displayName} before any chunks. Falling back.`, {
+          errorType: err.errorType,
           provider: providerKey,
         });
         failedKeys.add(modelKey);
@@ -225,9 +255,9 @@ export class RequestPipeline {
    * @param {boolean} options.isStream
    * @returns {Promise<{responseText, latencyMs}>|AsyncGenerator<string>}
    */
-  _executeCandidate({ candidate, provider, cieResult, systemPrompt, settings, isStream }) {
+  _executeCandidate({ candidate, provider, cieResult, systemPrompt, settings, isStream, signal }) {
     return isStream
-      ? this._executeStream(candidate, provider, cieResult, systemPrompt, settings)
+      ? this._executeStream(candidate, provider, cieResult, systemPrompt, settings, signal)
       : this._executeGenerate(candidate, provider, cieResult, systemPrompt, settings);
   }
 
@@ -246,7 +276,7 @@ export class RequestPipeline {
     while (retryCount <= maxRetries) {
       const attemptStart = Date.now();
       try {
-        diagnostics.debug("RequestPipeline", `Attempting generate: ${candidate.displayName} (${providerKey}/${candidate.modelId}) [Attempt ${retryCount + 1}/${maxRetries + 1}]`);
+        this.diagnostics.debug("RequestPipeline", `Attempting generate: ${candidate.displayName} (${providerKey}/${candidate.modelId}) [Attempt ${retryCount + 1}/${maxRetries + 1}]`);
 
         const responseText = await provider.generate(candidate.modelId, cieResult.promptText, {
           systemPrompt,
@@ -255,8 +285,8 @@ export class RequestPipeline {
         });
 
         const latencyMs = Date.now() - attemptStart;
-        providerPool.recordSuccess(providerKey, latencyMs);
-        providerPool.recordSuccess(modelKey, latencyMs);
+        this.providerPool.recordSuccess(providerKey, latencyMs);
+        this.providerPool.recordSuccess(modelKey, latencyMs);
 
         return { responseText, latencyMs };
 
@@ -264,26 +294,33 @@ export class RequestPipeline {
         lastError = err;
         const attemptLatency = Date.now() - attemptStart;
 
-        diagnostics.warn("RequestPipeline", `Generate attempt failed for ${candidate.displayName}: ${err.message}`, {
+        // Domain/context failures are not provider outages and must not affect
+        // provider health or enter provider retry/fallback.
+        if (!err?.errorType) throw err;
+
+        this.diagnostics.warn("RequestPipeline", `Generate attempt failed for ${candidate.displayName}.`, {
+          errorType: err.errorType || err.name || "Error",
+          errorCode: err.code || null,
           attempt: retryCount + 1,
           latencyMs: attemptLatency,
         });
 
-        providerPool.recordFailure(providerKey, err);
-        providerPool.recordFailure(modelKey, err);
+        this.providerPool.recordFailure(providerKey, err);
+        this.providerPool.recordFailure(modelKey, err);
 
         // Context limit: re-run CIE compression then retry
         if (err.type === "CONTEXT_LIMIT" || err.type === "PAYLOAD_TOO_LARGE") {
-          diagnostics.info("RequestPipeline", `Context limit hit for ${candidate.displayName}. Compression will be applied on next attempt.`);
+          this.diagnostics.info("RequestPipeline", `Context limit hit for ${candidate.displayName}. Compression will be applied on next attempt.`);
           retryCount++;
           continue;
         }
 
         // Transient error within retry budget
-        if (retryManager.isRetryable(err) && retryCount < maxRetries) {
-          const delay = retryManager.calculateBackoff(retryCount);
-          diagnostics.info("RequestPipeline", `Retrying transient failure in ${delay}ms...`, { attempt: retryCount + 1, delay });
-          await retryManager.sleep(delay);
+        if (err?.errorType && err?.shouldFallback === false && !err?.shouldCompress) throw err;
+        if (this.retryManager.isRetryable(err) && retryCount < maxRetries) {
+          const delay = this.retryManager.calculateBackoff(retryCount);
+          this.diagnostics.info("RequestPipeline", `Retrying transient failure in ${delay}ms...`, { attempt: retryCount + 1, delay });
+          await this.retryManager.sleep(delay);
           retryCount++;
           continue;
         }
@@ -301,22 +338,24 @@ export class RequestPipeline {
    * Retry is not applied to streams; fallback is handled at executeStream() level.
    * @private
    */
-  async *_executeStream(candidate, provider, cieResult, systemPrompt, settings) {
+  async *_executeStream(candidate, provider, cieResult, systemPrompt, settings, signal) {
     const providerKey = candidate.provider;
     const modelKey    = candidate.name || candidate.key || providerKey;
     const startTime   = Date.now();
 
     try {
-      diagnostics.debug("RequestPipeline", `Attempting stream: ${candidate.displayName} (${providerKey}/${candidate.modelId})`);
+      this.diagnostics.debug("RequestPipeline", `Attempting stream: ${candidate.displayName} (${providerKey}/${candidate.modelId})`);
 
       const stream = provider.stream(candidate.modelId, cieResult.promptText, {
         systemPrompt,
         temperature: settings.temperature,
         maxTokens:   settings.maxTokens,
+        signal,
       });
 
       let chunkCount = 0;
       for await (const chunk of stream) {
+        if (signal?.aborted) return;
         if (chunk) {
           chunkCount++;
           yield chunk;
@@ -324,14 +363,16 @@ export class RequestPipeline {
       }
 
       const latencyMs = Date.now() - startTime;
-      providerPool.recordSuccess(providerKey, latencyMs);
-      providerPool.recordSuccess(modelKey, latencyMs);
+      this.providerPool.recordSuccess(providerKey, latencyMs);
+      this.providerPool.recordSuccess(modelKey, latencyMs);
 
-      diagnostics.debug("RequestPipeline", `Stream finished for ${candidate.displayName}. Chunks: ${chunkCount}, Latency: ${latencyMs}ms.`);
+      this.diagnostics.debug("RequestPipeline", `Stream finished for ${candidate.displayName}. Chunks: ${chunkCount}, Latency: ${latencyMs}ms.`);
 
     } catch (err) {
-      providerPool.recordFailure(providerKey, err);
-      providerPool.recordFailure(modelKey, err);
+      if (err?.errorType) {
+        this.providerPool.recordFailure(providerKey, err);
+        this.providerPool.recordFailure(modelKey, err);
+      }
       throw err;
     }
   }

@@ -90,7 +90,7 @@ The diagram illustrates dependency handling, not a guaranteed natural-language p
 
 ## Tool registry compatibility
 
-`services/toolRouter.js` wraps `core/routing/ToolRouter.js`; that core module currently delegates request execution to `CapabilityManager`. A separate legacy `services/toolRegistry.js` registers/execut es tool implementations and is used by confirmation service after approval. Thus request classification/execution and confirmed-action dispatch are related but distinct registries. Email/calendar capabilities may use managers directly while pending confirmations use the generic tool registry.
+`services/toolRouter.js` wraps `core/routing/ToolRouter.js`; that core module delegates to `AgentRuntime`, which plans the capability graph, assembles request context, and invokes `CapabilityManager`. A separate legacy `services/toolRegistry.js` registers tool implementations used by confirmation service after approval. Thus request planning/execution and confirmed-action dispatch use distinct registries. Email/calendar capabilities may use managers directly while pending confirmations use the generic tool registry.
 
 ## Verification gaps
 

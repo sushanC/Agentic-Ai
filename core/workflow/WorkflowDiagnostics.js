@@ -1,4 +1,5 @@
 import { developerEvents } from "../events/DeveloperEvents.js";
+import { getCurrentRequestContext } from "../request/RequestContext.js";
 
 /**
  * WorkflowDiagnostics.js
@@ -23,7 +24,8 @@ export class WorkflowDiagnostics {
   logStarted(workflowId, prompt) {
     this._events.emitDevEvent("WorkflowStarted", {
       workflowId,
-      prompt: prompt.slice(0, 120),
+      promptLength: String(prompt || "").length,
+      requestId: getCurrentRequestContext()?.requestId || null,
     });
   }
 
@@ -61,7 +63,8 @@ export class WorkflowDiagnostics {
       workflowId,
       nodeId,
       capability,
-      task: task.slice(0, 80),
+      taskLength: String(task || "").length,
+      requestId: getCurrentRequestContext()?.requestId || null,
     });
   }
 
@@ -89,7 +92,8 @@ export class WorkflowDiagnostics {
     this._events.emitDevEvent("WorkflowNodeFailed", {
       workflowId,
       nodeId,
-      error: error instanceof Error ? error.message : String(error),
+      errorCode: error?.code || error?.errorCode || error?.name || "WORKFLOW_NODE_FAILED",
+      requestId: getCurrentRequestContext()?.requestId || null,
     });
   }
 
@@ -128,7 +132,8 @@ export class WorkflowDiagnostics {
   logError(workflowId, error) {
     this._events.emitDevEvent("WorkflowError", {
       workflowId,
-      error: error instanceof Error ? error.message : String(error),
+      errorCode: error?.code || error?.errorCode || error?.name || "WORKFLOW_FAILED",
+      requestId: getCurrentRequestContext()?.requestId || null,
     });
   }
 }

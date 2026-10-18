@@ -37,4 +37,8 @@ export const ERROR_CODES = Object.freeze({
 
   // Stream failure
   STREAMING_INTERRUPTED:        "STREAMING_INTERRUPTED",
+  REQUEST_CANCELLED:            "REQUEST_CANCELLED",
+  CANCELLED:                    "CANCELLED",
+  PERMISSION_DENIED:            "PERMISSION_DENIED",
+  BUSINESS_ACTION_FAILED:       "BUSINESS_ACTION_FAILED",
 });

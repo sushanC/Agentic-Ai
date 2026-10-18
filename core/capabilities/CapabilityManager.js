@@ -67,7 +67,7 @@ export class CapabilityManager {
    * @param {object} [assembledContext] - Assembled context payload from ContextAssembly
    * @returns {Promise<object>} WorkflowResult (CapabilityResult-compatible shape)
    */
-  async executeRequest(prompt, toolContext = "chat", assembledContext = {}) {
+  async executeRequest(prompt, toolContext = "chat", assembledContext = {}, requestContext = null) {
     const context = new CapabilityContext({
       prompt,
       toolContext,
@@ -75,6 +75,9 @@ export class CapabilityManager {
       history:         assembledContext.history       || [],
       summary:         assembledContext.summary       || "",
       pdfMemory:       assembledContext.pdfMemory     || {},
+      userPreferences: assembledContext.userPreferences || {},
+      requestContext,
+      contextSnapshot: assembledContext,
     });
 
     try {
@@ -96,24 +99,6 @@ export class CapabilityManager {
     } catch (err) {
       this.diagnostics.logError("workflow", err);
 
-      // Fallback: attempt direct ChatCapability execution if workflow engine fails
-      console.warn("[CapabilityManager] WorkflowEngine failed — falling back to ChatCapability.", err.message);
-      const chatCap = this.registry.getCapability("chat");
-      if (chatCap) {
-        try {
-          const { CapabilityLifecycle } = await import("./CapabilityLifecycle.js");
-          const fallbackResult = await CapabilityLifecycle.run(chatCap, context);
-          if (fallbackResult && fallbackResult.answer) {
-            return CapabilityResult.create({
-              ...fallbackResult,
-              metadata: { fallbackReason: err.message },
-            });
-          }
-        } catch (chatErr) {
-          console.warn("[CapabilityManager] ChatCapability fallback also failed.", chatErr.message);
-        }
-      }
-
       const normalized = ErrorNormalizer.normalize(err, { capability: "chat", tool: "chat" });
       return CapabilityResult.create({
         success: false,
@@ -121,7 +106,7 @@ export class CapabilityManager {
         tool: "chat",
         answer: normalized.userMessage,
         response: normalized.userMessage,
-        diagnostics: { error: err.message },
+        diagnostics: normalized.diagnostics,
         metadata: {
           code: normalized.code,
           technicalMessage: normalized.technicalMessage,

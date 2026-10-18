@@ -9,6 +9,8 @@ sequenceDiagram
   participant Controller as chatController
   participant Chat as chatService
   participant Router as services/toolRouter
+  participant AR as AgentRuntime
+  participant CA as ContextAssembly
   participant CM as CapabilityManager
   participant WF as WorkflowEngine
   participant Exec as WorkflowExecutor
@@ -19,8 +21,12 @@ sequenceDiagram
   Express->>Controller: postChat
   Controller->>Chat: handleStandardChat(message)
   Chat->>Store: add user message; update extracted memory
-  Chat->>Router: routeRequest(message)
-  Router->>CM: executeRequest(prompt, toolContext)
+  Chat->>Router: routeRequest(message, toolContext, requestContext)
+  Router->>AR: run(prompt, toolContext, options)
+  AR->>AR: plan capabilities
+  AR->>CA: assembleContext once
+  CA-->>AR: scoped context snapshot
+  AR->>CM: executeRequest(prompt, toolContext, snapshot, requestContext)
   CM->>WF: execute(CapabilityContext)
   WF->>WF: heuristic plan + validate graph
   WF->>Exec: execute graph in dependency order
@@ -39,9 +45,9 @@ sequenceDiagram
 
 ### Observed path and distinctions
 
-`POST /chat` does not call `AgentRuntime.run()`. It uses `handleStandardChat()` → `services/toolRouter.routeRequest()` → `core/routing/ToolRouter.routeRequest()` → `CapabilityManager.executeRequest()` → `WorkflowEngine`. `AgentRuntime.run()` separately assembles memory/history/summary/PDF context and delegates to `CapabilityManager`, but no route was found invoking it. The `CapabilityContext` constructor in `CapabilityManager` receives the optional assembled context, which is `{}` on the compatibility route.
+`POST /chat` now uses `handleStandardChat()` → `services/toolRouter.routeRequest()` → `core/routing/ToolRouter.routeRequest()` → `AgentRuntime.run()` → `ContextAssembly` → `CapabilityManager` → `WorkflowEngine`. The compatibility `routeRequest(message, toolContext, options)` signature remains. The controller rejects missing, non-string, and blank messages with HTTP 400 and `{error:"message is required"}` before executing the chat service. Request context middleware accepts a syntactically safe `X-Request-Id` or creates one, returns it in the response header before the local API guard, and carries it through async-local storage and capability/workflow contexts. Chat memory extraction and history persistence remain in `chatService`.
 
-The Chat capability calls `askAI(context.prompt, context.toolContext)`. `askAI()` calls `RuntimeManager.execute()`, which loads settings, chooses a model through `ModelRouter`/model-selection and runs `RequestPipeline`. This is the main non-stream generation path. Research, code and other capabilities may also call `askAI` or dedicated feature services.
+The Chat capability calls `askAI(context.prompt, context.toolContext, {requestContext, contextSnapshot})`. `askAI()` calls `RuntimeManager.execute()`, which reuses the snapshot for model token estimates and passes it to `RequestPipeline`; provider-specific token fitting still occurs in CIE. Research, code and other capabilities may also call `askAI` or dedicated feature services.
 
 ## Direct requests vs tools vs workflows
 
@@ -49,16 +55,20 @@ The Chat capability calls `askAI(context.prompt, context.toolContext)`. `askAI()
 - **Capability execution:** planner's ordered regex rules map the prompt to one capability; lifecycle wraps its execute method. `CapabilityRouter` exists and scores `canHandle`, but `WorkflowExecutor` selects the capability by `WorkflowNode.requiredCapability` from the registry; the router is not the planner's selection mechanism on this path.
 - **Multi-step request:** connector regexes split prompt text, each segment is classified independently, and nodes are linked in a sequential dependency chain. Upstream outputs enter later node context as `workingMemory`; the prompt is composed by `WorkflowContext`.
 - **Confirmation-gated action:** email/calendar managers create pending actions and return structured waiting/confirmation results. Generic `POST /confirm` executes via `toolRegistry`. Calendar/email conversational flows also handle affirmative/cancel text through their managers. Sending is distinct from drafting and requires confirmation by policy.
-- **Streaming:** `POST /chat/stream` invokes `handleStreamChatService`. Non-chat tool results are returned with line-oriented text protocol markers `__TIMELINE__`, `__CONFIRMATION__`, and `__WAITING_INPUT__`. Plain chat calls legacy `askGroqStream`, not the `RuntimeManager.executeStream()` method.
+- **Streaming:** `POST /chat/stream` invokes `handleStreamChatService` → `AgentRuntime.runStream`. Chat plans stream through `ChatCapability.executeStream` → `askAIStream` → `RuntimeManager.executeStream` → `RequestPipeline.executeStream`; non-chat results execute the capability workflow once. The existing `__TIMELINE__`, `__CONFIRMATION__`, and `__WAITING_INPUT__` markers remain. Client disconnects signal cancellation to the installed provider adapters; provider switching is allowed only before the first content chunk.
 
 ## Result and error boundaries
 
-Capability returns are normalized with `CapabilityResult` fields `success`, `capability`, `tool`, `answer`/`response`, `executedSteps`, `toolCalls`, `artifacts`, `diagnostics`, and `metadata`. Workflow executor observes `success === false`, marks the node failed, skips dependents and aggregates a `WorkflowResult`. Unexpected workflow exceptions are normalized through `ErrorNormalizer`. The standard chat service catches a thrown request error and returns a generic message if no answer is available. In contrast, streaming response formats and direct `POST /confirm` response shapes differ; there is no single API-wide error envelope.
+Capability returns retain `CapabilityResult` fields `success`, `capability`, `tool`, `answer`/`response`, `executedSteps`, `toolCalls`, `artifacts`, `diagnostics`, and `metadata`. Workflow executor observes `success === false`, marks the node failed, skips dependents and aggregates a `WorkflowResult`. `ErrorNormalizer` supplies stable codes, safe user messages and the request ID. The HTTP response-body contracts remain `{reply}` for standard chat and the existing marker-based text protocol for streaming; direct `POST /confirm` still has its own shape.
 
 ## Provider lifecycle
 
-See the routing diagram and ordering discussion in [backend architecture](SAMGPT_BACKEND_ARCHITECTURE.md). In brief: intent/model selection chooses primary model, `ProviderPool` builds candidates, `RequestPipeline` retries candidate generation and falls back through candidates; response pipeline cleans answer. Streaming has separate candidate handling in RuntimeManager if called, but the HTTP streaming service uses older `askGroqStream` code. Neither request path exposes a consistent request ID or idempotency key in the inspected contract.
+See the routing diagram and ordering discussion in [backend architecture](SAMGPT_BACKEND_ARCHITECTURE.md). Intent/model selection chooses the primary model, `ProviderPool` builds candidates, `RequestPipeline` applies provider retries/fallback, and `ResponsePipeline` cleans standard answers. Streaming uses the same candidate pipeline; provider fallback stops after any content is emitted. Request IDs are carried end-to-end, but idempotency keys and durable workflow checkpoints are not implemented.
 
 ## Recovery gaps to track
 
 The request lifecycle does not persist an in-progress workflow, cancellation token or execution checkpoint. A server restart can lose in-memory conversation sessions and cannot resume a workflow. Provider retries and fallback are separate from business-action retry; a failed business operation should not be replayed simply because an AI provider failed. See [security and reliability audit](SAMGPT_SECURITY_AND_RELIABILITY_AUDIT.md).
+
+## Phase 3 verification boundary
+
+The Express chat router, controller and request middleware are exercised over an ephemeral loopback server with injected service/runtime/provider behavior and temporary history storage. The production `server.js` entrypoint itself is not imported because it starts the listener and initializes voice hardware on module load. Live SDK/network cancellation, client rendering of mixed marker/text chunks, and unrelated API routes are not covered by this suite.

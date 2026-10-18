@@ -1,4 +1,5 @@
 import { RUNTIME_CONFIG } from "./RuntimeConfig.js";
+import { getCurrentRequestContext } from "../request/RequestContext.js";
 
 export const LogLevel = Object.freeze({
   TRACE: 0,
@@ -68,6 +69,8 @@ export class RuntimeDiagnostics {
     if (level < this.currentLevel) return;
 
     const levelName = LEVEL_NAMES[level];
+    const requestId = getCurrentRequestContext()?.requestId;
+    if (requestId) meta = { ...(meta || {}), requestId };
     const metaStr = meta !== undefined ? ` | ${JSON.stringify(meta)}` : "";
 
     if (level >= LogLevel.ERROR) {

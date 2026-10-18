@@ -5,10 +5,10 @@
  * Manages developer console telemetry logging, active request lifecycle tracking,
  * and IPC dev event emissions.
  */
+import { createRequestContext, getCurrentRequestContext } from "../request/RequestContext.js";
+
 class DeveloperEventEmitter {
   constructor() {
-    this.activeRequestId = null;
-    this.requestStartTime = null;
     this.listeners = new Set();
   }
 
@@ -21,14 +21,16 @@ class DeveloperEventEmitter {
    */
   emitDevEvent(eventName, payload = {}) {
     const timestamp = new Date().toISOString();
+    const requestId = payload.requestId || getCurrentRequestContext()?.requestId || null;
     const event = {
       event: eventName,
       timestamp,
-      requestId: this.activeRequestId,
+      requestId,
       ...payload
     };
 
-    console.log(`[DevBridge Event] ${eventName}:`, JSON.stringify(payload));
+    // Payload remains available to internal subscribers; console output is metadata-only.
+    console.log(`[DevBridge Event] ${eventName}`, { requestId });
 
     for (const listener of this.listeners) {
       try {
@@ -43,21 +45,19 @@ class DeveloperEventEmitter {
    * Begin a logical request context.
    * @returns {string} Session ID
    */
-  beginRequest() {
-    this.activeRequestId = `req-${Date.now()}`;
-    this.requestStartTime = Date.now();
-    console.log(`[DevBridge] Request started: ${this.activeRequestId}`);
-    return this.activeRequestId;
+  beginRequest(requestId) {
+    const context = createRequestContext(requestId || getCurrentRequestContext()?.requestId);
+    console.log("[DevBridge] Request started", { requestId: context.requestId });
+    return context.requestId;
   }
 
   /**
    * End the current logical request context.
    */
-  endRequest() {
-    const duration = this.requestStartTime ? Date.now() - this.requestStartTime : 0;
-    console.log(`[DevBridge] Request ended: ${this.activeRequestId} (Duration: ${duration}ms)`);
-    this.activeRequestId = null;
-    this.requestStartTime = null;
+  endRequest(requestId) {
+    console.log("[DevBridge] Request ended", {
+      requestId: requestId || getCurrentRequestContext()?.requestId || null,
+    });
   }
 
   /**
