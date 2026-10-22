@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = {
   pushToTalk: false,
   conversationMode: false,
   voiceSelection: "en-IN-NeerjaNeural",
+  voiceGreeting: "SamGPT online. I'm listening. How can I help you?",
   speechSpeed: "+0%",
   speechPitch: "+0Hz",
   speechVolume: "+0%",
@@ -33,7 +34,11 @@ const DEFAULT_SETTINGS = {
   speakerSelection: "default",
   language: "en",
   autoListenAfterResponse: false,
-  conversationTimeout: 30
+  conversationTimeout: 30,
+  silenceTimeout: 1.2,
+  noiseTolerance: 300,
+  maxRecordingTime: 15,
+  noSpeechTimeout: 5
 };
 
 export async function loadSettings() {

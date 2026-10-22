@@ -41,7 +41,8 @@ export function shutdownSTT() {
  */
 export async function listen(options = {}) {
   // Ensure the Whisper daemon is initialized and ready
-  await initSTT();
+  const ready = await initSTT();
+  if (!ready) throw new Error("Speech recognition is unavailable. Check the configured Python environment and Whisper dependencies.");
 
   const {
     language = VOICE_CONFIG.STT.language,
@@ -50,8 +51,13 @@ export async function listen(options = {}) {
     noiseTolerance = VOICE_CONFIG.STT.noiseTolerance,
     noSpeechTimeout = VOICE_CONFIG.STT.noSpeechTimeout,
     device = "default",
-    beamSize = VOICE_CONFIG.STT.beamSize
+    beamSize = VOICE_CONFIG.STT.beamSize,
+    signal,
+    onCaptureStarted,
+    isMuted = () => false
   } = options;
+
+  if (signal?.aborted) return { text: "", aborted: true };
 
   return new Promise((resolve, reject) => {
     const tempFile = path.join(os.tmpdir(), `samgpt-audio-${randomUUID()}.wav`);
@@ -83,14 +89,14 @@ export async function listen(options = {}) {
     }
 
     const recStream = recording.stream();
-    recStream.pipe(fileStream);
-
     const vad = new VadDetector({ noiseTolerance, silenceTimeout, noSpeechTimeout });
     let maxTimeTimeout = null;
     let finished = false;
     let isStopping = false;
+    let abortHandler;
+    let captureStarted = false;
 
-    const cleanupAndResolve = () => {
+    const cleanupAndResolve = (captureError = null) => {
       if (finished) return;
       finished = true;
       isStopping = true;
@@ -100,6 +106,7 @@ export async function listen(options = {}) {
       if (maxTimeTimeout) {
         clearTimeout(maxTimeTimeout);
       }
+      if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
 
       try {
         if (recording.process) {
@@ -112,6 +119,18 @@ export async function listen(options = {}) {
       }
 
       fileStream.end();
+
+      if (signal?.aborted) {
+        fs.unlink(tempFile, () => {});
+        resolve({ text: "", aborted: true });
+        return;
+      }
+
+      if (captureError) {
+        fs.unlink(tempFile, () => {});
+        resolve({ text: "", error: "Audio capture failed." });
+        return;
+      }
 
       setTimeout(async () => {
         if (!fs.existsSync(tempFile)) {
@@ -158,7 +177,25 @@ export async function listen(options = {}) {
 
     // Voice Activity Detection (VAD) audio stream handler
     recStream.on("data", (chunk) => {
-      const vadResult = vad.processChunk(chunk);
+      if (finished) return;
+      if (!captureStarted && chunk?.length) {
+        captureStarted = true;
+        onCaptureStarted?.();
+      }
+      const isWaveHeader = vad.totalBytesStreamed === 0 &&
+        chunk.length === VOICE_CONFIG.VAD.wavHeaderLength &&
+        chunk.toString("utf-8", 0, 4) === VOICE_CONFIG.VAD.wavHeaderTag;
+      const audioToStore = !isWaveHeader && isMuted()
+        ? Buffer.alloc(chunk.length)
+        : chunk;
+      const vadInput = isWaveHeader || !isMuted() ? chunk : audioToStore;
+      const vadResult = vad.processChunk(vadInput);
+      if (!fileStream.write(audioToStore)) {
+        recStream.pause();
+        fileStream.once("drain", () => {
+          if (!finished) recStream.resume();
+        });
+      }
 
       if (vadResult.isHeader) {
         console.log("[STT VAD] WAV header chunk received (44 bytes). Skipped from RMS calculation.");
@@ -194,13 +231,15 @@ export async function listen(options = {}) {
 
     recStream.on("error", (err) => {
       const errMsg = String(err || "");
-      if (isStopping || errMsg.includes("exited with error code") || errMsg.includes("SIGINT") || errMsg.includes("SIGTERM")) {
+      if (isStopping || errMsg.includes("SIGINT") || errMsg.includes("SIGTERM")) {
         console.log("[STT] Recorder stream closed (normal termination).");
       } else {
-        console.error("[STT] Recorder stream error:", err);
+        console.error("[STT] Recorder stream error", { code: err?.code || "RECORDER_STREAM_ERROR" });
+        cleanupAndResolve(err);
       }
-      cleanupAndResolve();
     });
+
+    fileStream.on("error", (err) => cleanupAndResolve(err));
 
     if (maxRecordingTime > 0) {
       maxTimeTimeout = setTimeout(() => {
@@ -208,5 +247,9 @@ export async function listen(options = {}) {
         cleanupAndResolve();
       }, maxRecordingTime * 1000);
     }
+
+    abortHandler = () => cleanupAndResolve();
+    signal?.addEventListener("abort", abortHandler, { once: true });
+    if (signal?.aborted) abortHandler();
   });
 }

@@ -5,11 +5,16 @@ import { askAI } from "../../services/ai.js";
 export async function handleVoice() {
   console.log("\n🎤 Speak now...\n");
 
-  const text = await listen();
+  const recognition = await listen();
+  const text = typeof recognition === "string" ? recognition : recognition?.text;
 
   console.log("[VoiceService] Speech recognized", { characterCount: text?.length || 0 });
 
-  const answer = await askAI(text);
+  if (!text?.trim()) {
+    return { transcript: "", answer: "", error: "No speech was recognized." };
+  }
+
+  const answer = await askAI(text.trim());
 
   const cleanAnswer = answer.replace(/\*\*/g, "");
 

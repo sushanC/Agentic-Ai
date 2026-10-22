@@ -14,15 +14,16 @@ export class VoiceEventEmitter {
    * @param {string|null} text - Active user transcript
    * @param {string|null} reply - Active assistant reply
    */
-  emitStateChange(state, oldState, text = null, reply = null) {
+  emitStateChange(state, oldState, text = null, reply = null, error = null) {
     if (typeof process.send === "function") {
       process.send({
         type: "VOICE_STATE_CHANGE",
         payload: {
           state,
           oldState,
-          text: state === "processing" ? text : null,
-          reply: state === "speaking" ? reply : null
+          text: state === "thinking" ? text : null,
+          reply: state === "speaking" ? reply : null,
+          error: state === "error" ? error : null
         }
       });
     }
@@ -42,6 +43,10 @@ export class VoiceEventEmitter {
   emitVoiceStopped(reason = "User manual deactivate") {
     emitDevEvent("VoiceStopped", { reason });
   }
+
+  emitGreetingGenerated() { emitDevEvent("VoiceGreetingGenerated", { ok: true }); }
+  emitGreetingPlaybackFinished() { emitDevEvent("VoiceGreetingPlaybackFinished", { ok: true }); }
+  emitVoiceError(code) { emitDevEvent("VoiceError", { code }); }
 
   /**
    * Emit continuous conversation session start.
@@ -70,7 +75,7 @@ export class VoiceEventEmitter {
    * @param {string} text
    */
   emitSpeechRecognized(text) {
-    emitDevEvent("SpeechRecognized", { text });
+    emitDevEvent("SpeechRecognized", { characterCount: String(text || "").length });
   }
 
   /**
@@ -78,7 +83,9 @@ export class VoiceEventEmitter {
    * @param {string} error
    */
   emitSpeechRecognitionFailed(error) {
-    emitDevEvent("SpeechRecognitionFailed", { error });
+    const code = typeof error === "string" && /^[A-Z0-9_-]{1,64}$/.test(error)
+      ? error : "SPEECH_RECOGNITION_FAILED";
+    emitDevEvent("SpeechRecognitionFailed", { code });
   }
 
   /**
@@ -86,7 +93,7 @@ export class VoiceEventEmitter {
    * @param {string} prompt
    */
   emitAIStarted(prompt) {
-    emitDevEvent("AIStarted", { prompt });
+    emitDevEvent("AIStarted", { characterCount: String(prompt || "").length });
   }
 
   /**
@@ -95,7 +102,7 @@ export class VoiceEventEmitter {
    * @param {string} reply
    */
   emitAIFinished(latencyMs, reply) {
-    emitDevEvent("AIFinished", { latencyMs, reply });
+    emitDevEvent("AIFinished", { latencyMs, characterCount: String(reply || "").length });
   }
 
   /**
@@ -103,7 +110,7 @@ export class VoiceEventEmitter {
    * @param {string} text
    */
   emitTTSStarted(text) {
-    emitDevEvent("TTSStarted", { text });
+    emitDevEvent("TTSStarted", { characterCount: String(text || "").length });
   }
 
   /**

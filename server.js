@@ -1,8 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import multer from "multer";
 import { createLocalApiGuard, isAllowedLocalOrigin, logSafeError, safeErrorCode } from "./services/httpSecurity.js";
+import { requestPrincipalContextMiddleware } from "./core/security/PrincipalContext.js";
+import { createRemoteAuthorization, createRemoteRateLimiter, createTrustedProxyGuard, loadRemoteAccessConfig } from "./services/remoteAccess.js";
 import { requestContextMiddleware } from "./core/request/RequestContext.js";
 import { createBackupService } from "./services/backupService.js";
 import { recoverPendingRestore } from "./services/restoreStartup.js";
@@ -119,8 +120,12 @@ const backupService = createBackupService({
 
 const configuredOrigins = (process.env.SAMGPT_ALLOWED_ORIGINS || "")
   .split(",").map(value => value.trim()).filter(Boolean);
+const remoteAccessConfig = await loadRemoteAccessConfig();
+app.disable("trust proxy");
 app.use(requestContextMiddleware);
+app.use(requestPrincipalContextMiddleware);
 app.use(createLocalApiGuard(configuredOrigins));
+app.use(createTrustedProxyGuard(remoteAccessConfig));
 app.use(cors({
   origin(origin, callback) {
     if (!origin) return callback(null, false);
@@ -128,10 +133,8 @@ app.use(cors({
   },
   optionsSuccessStatus: 204,
 }));
-
-const upload = multer({
-  dest: "uploads/"
-});
+app.use(createRemoteAuthorization(remoteAccessConfig));
+app.use(createRemoteRateLimiter());
 
 const standardJsonParser = express.json({ limit: "100kb" });
 const restoreJsonParser = express.json({ limit: "1mb" });
@@ -886,7 +889,7 @@ if (typeof process.on === "function") {
     try {
       switch (msg.type) {
         case "START_VOICE_MODE":
-          voiceManager.startVoiceMode();
+          await voiceManager.startVoiceMode();
           break;
         case "STOP_VOICE_MODE":
           voiceManager.stopVoiceMode();
@@ -895,7 +898,7 @@ if (typeof process.on === "function") {
           await voiceManager.toggleVoiceMode();
           break;
         case "START_LISTENING":
-          await voiceManager.startListening();
+          await voiceManager.startVoiceMode();
           break;
         case "CANCEL_LISTENING":
           voiceManager.cancelListening();
@@ -911,6 +914,12 @@ if (typeof process.on === "function") {
           break;
         case "RELOAD_VOICE_SETTINGS":
           await voiceManager.reloadSettings();
+          break;
+        case "REPEAT_LAST_RESPONSE":
+          await voiceManager.repeatLastResponse();
+          break;
+        case "SET_MICROPHONE_MUTED":
+          voiceManager.setMicrophoneMuted(Boolean(msg.muted));
           break;
         default:
           break;
@@ -1007,3 +1016,19 @@ app.get(
     }
   }
 );
+
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const code = safeErrorCode(err);
+  logSafeError("HTTP request failed", err);
+  if (err?.code === "LIMIT_FILE_SIZE" || err?.status === 413) {
+    return res.status(413).json({ error: "Request or upload exceeds the allowed size.", requestId: req.requestContext?.requestId });
+  }
+  if (err?.code === "UPLOAD_TYPE_INVALID") {
+    return res.status(400).json({ error: "Only PDF uploads are accepted.", requestId: req.requestContext?.requestId });
+  }
+  if (err?.type === "entity.parse.failed" || err instanceof SyntaxError || /^LIMIT_/.test(err?.code || "")) {
+    return res.status(400).json({ error: "Request body is invalid.", requestId: req.requestContext?.requestId });
+  }
+  return res.status(500).json({ error: "Request failed.", code, requestId: req.requestContext?.requestId });
+});

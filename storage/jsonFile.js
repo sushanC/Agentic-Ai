@@ -3,6 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import os from "os";
 import { AsyncLocalStorage } from "async_hooks";
+import { assertOwnerDataAccess } from "../core/security/PrincipalContext.js";
 
 const locks = new Map();
 const heldDirectoryLocks = new AsyncLocalStorage();
@@ -103,6 +104,7 @@ async function acquireCrossProcessLock(filePath, { timeoutMs = LOCK_TIMEOUT_MS }
 
 /** Serialize updates to one file in this process and across processes on a local filesystem. */
 export async function withJsonFileLock(filePath, operation, options = {}) {
+  assertOwnerDataAccess(filePath);
   const key = path.resolve(filePath);
   const dataDirectory = path.dirname(key);
   const previous = locks.get(key) || Promise.resolve();
@@ -131,6 +133,7 @@ export async function withJsonFileLock(filePath, operation, options = {}) {
 
 /** Missing files use the supplied default; malformed files fail closed. */
 export async function readJsonFile(filePath, fallbackValue) {
+  assertOwnerDataAccess(filePath);
   let content;
   try {
     content = await fs.readFile(filePath, "utf8");
@@ -197,6 +200,7 @@ export function createJsonFileStore(filePath, { fallbackValue, validate = () => 
 /** Write JSON through a same-directory temporary file and atomic rename. */
 export async function writeJsonFile(filePath, value, { mode, renameFile = fs.rename } = {}) {
   const resolved = path.resolve(filePath);
+  assertOwnerDataAccess(resolved);
   const dir = path.dirname(resolved);
   const tempPath = path.join(dir, `.${path.basename(resolved)}.${process.pid}.${randomUUID()}.tmp`);
   const data = `${JSON.stringify(value, null, 2)}\n`;
@@ -221,6 +225,7 @@ export async function writeJsonFile(filePath, value, { mode, renameFile = fs.ren
 /** Atomically replace generated text output with a private same-directory temp file. */
 export async function writeTextFileAtomic(filePath, text, { mode = 0o600 } = {}) {
   const resolved = path.resolve(filePath);
+  assertOwnerDataAccess(resolved);
   const dir = path.dirname(resolved);
   const tempPath = path.join(dir, `.${path.basename(resolved)}.${process.pid}.${randomUUID()}.tmp`);
   return withJsonFileLock(resolved, async () => {

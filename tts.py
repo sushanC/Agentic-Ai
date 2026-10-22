@@ -1,8 +1,6 @@
 import asyncio
-import edge_tts
 import sys
 import argparse
-import sys
 
 
 def parse_args():
@@ -17,8 +15,6 @@ def parse_args():
 
 
 async def main():
-    print("ARGV:", repr(sys.argv), file=sys.stderr)
-
     args, unknown = parse_args()
     
     # Handle backward compatibility: if no flags are matched but we have arguments,
@@ -28,8 +24,15 @@ async def main():
         text = sys.argv[1]
 
     if not text:
-        print("Error: No text provided to speak.")
-        sys.exit(1)
+        raise ValueError("No text provided")
+
+    try:
+        import edge_tts
+    except ModuleNotFoundError as error:
+        if error.name == "edge_tts":
+            print("EDGE_TTS_DEPENDENCY_MISSING", file=sys.stderr)
+            raise SystemExit(2)
+        raise
 
     # Pronunciation dictionary — fixes common Edge-TTS mispronunciations
     # Applied after sanitization, before synthesis.
@@ -71,4 +74,22 @@ async def main():
     await communicate.save(args.output)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except SystemExit:
+        raise
+    except Exception as error:
+        status = getattr(error, "status", None)
+        name = type(error).__name__
+        if status:
+            print(f"EDGE_TTS_HTTP_{int(status)}", file=sys.stderr)
+        elif name in {"ClientConnectorError", "ClientConnectionError", "ServerDisconnectedError", "TimeoutError"}:
+            print("EDGE_TTS_NETWORK_FAILED", file=sys.stderr)
+        elif isinstance(error, ValueError):
+            print("EDGE_TTS_INVALID_INPUT", file=sys.stderr)
+        else:
+            # Emit only a stable class name. Do not write traceback URLs,
+            # request headers, or user-provided text to logs.
+            safe_name = "".join(character for character in name if character.isalnum() or character == "_")[:64]
+            print(f"EDGE_TTS_FAILED:{safe_name or 'UNKNOWN'}", file=sys.stderr)
+        sys.exit(1)

@@ -3,14 +3,30 @@ import { askPDF } from "./pdfRetriever.js";
 import { searchPDFChunks } from "./pdfSearch.js";
 import { uploadAndProcessPDF, executePDFAction } from "./pdfService.js";
 import { logSafeError } from "../../services/httpSecurity.js";
+import fs from "node:fs/promises";
 
 export async function uploadPDF(req, res) {
+  if (!req.file) return res.status(400).json({ error: "A PDF file is required." });
   try {
+    const header = await fs.open(req.file.path, "r");
+    let signature;
+    try {
+      const bytes = Buffer.alloc(5);
+      const { bytesRead } = await header.read(bytes, 0, 5, 0);
+      signature = bytes.subarray(0, bytesRead).toString("ascii");
+    } finally {
+      await header.close();
+    }
+    if (signature !== "%PDF-") return res.status(400).json({ error: "Uploaded file is not a valid PDF." });
     const result = await uploadAndProcessPDF(req.file.path, req.file.originalname);
     res.json(result);
   } catch (err) {
     logSafeError("PDF upload failed", err);
+    if (err.code === "PDF_TOO_MANY_PAGES") return res.status(400).json({ error: "PDF exceeds the 100-page processing limit." });
+    if (err.code === "PDF_OCR_PAGE_LIMIT") return res.status(400).json({ error: "Scanned PDF exceeds the 25-page OCR limit." });
     res.status(500).json({ error: "Upload failed" });
+  } finally {
+    await fs.unlink(req.file.path).catch(() => {});
   }
 }
 

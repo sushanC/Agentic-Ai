@@ -2,6 +2,10 @@
 
 Scope: static source inspection of the checked-out working tree on 2026-10-16, with Phase 4 storage/recovery follow-up on 2026-10-18 and local regression scripts. This is not a penetration test, dependency vulnerability scan, deployment review, or certification. No credentials or personal data were read for this report; `.env` contents were intentionally not displayed. Findings are evidence-based; baseline and current dispositions are distinguished below.
 
+**Phase 6 remote deployment decision (2026-10-18):** topology A (one Linux server, one backend, local persistent disk) is the initial target; multiple client machines do not require PostgreSQL or multiple backends. API identity, per-user ownership, remote auth, and artifact isolation are not implemented. Keep the service loopback-only. See [remote deployment and shared-state architecture](SAMGPT_REMOTE_DEPLOYMENT.md) for route risks, the OIDC design, store-by-store migration plan, artifact design and release gates.
+
+**Phase 7 update:** provider-neutral OIDC JWT verification, exact route authorization, one-owner manifest/adoption, JSON data-access checks, loopback HTTPS-proxy guard, request limits and security tests are now implemented. This does not make remote access ready: identity provider, owner adoption, client PKCE, actual proxy/TLS/firewall and private-network verification remain deployment gates. Details and the route matrix are in [remote deployment and shared-state architecture](SAMGPT_REMOTE_DEPLOYMENT.md).
+
 ## Phase 1 disposition (2026-10-16)
 
 The original findings below describe the pre-hardening baseline. Phase 1 and Phase 2 changes are now present in the working tree and verified by `npm test`; implemented controls and remaining limits are summarized here.

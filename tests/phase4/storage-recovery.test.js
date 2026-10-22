@@ -112,9 +112,11 @@ test("expiry cleanup removes expired pending entries but retains live claims and
   await withTempDir(async dir => {
     const storage = createPendingActionsStorage(path.join(dir, "pending.json"));
     await storage.addPendingAction(makePending("expired", { expiresAt: new Date(Date.now() - 10).toISOString() }));
-    await storage.addPendingAction(makePending("running", { expiresAt: new Date(Date.now() + 5).toISOString() }));
+    await storage.addPendingAction(makePending("running", { expiresAt: new Date(Date.now() + 60_000).toISOString() }));
     await storage.claimPendingAction("running");
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const claimed = await storage.loadPendingActions();
+    claimed.find(action => action.id === "running").expiresAt = new Date(Date.now() - 1).toISOString();
+    await storage.savePendingActions(claimed);
     await storage.cleanExpired();
     const actions = await storage.loadPendingActions();
     assert.equal(actions.some(action => action.id === "expired"), false);

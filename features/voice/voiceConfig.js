@@ -35,6 +35,7 @@ export const VOICE_CONFIG = Object.freeze({
 
   // TTS Synthesis Defaults
   TTS: Object.freeze({
+    greeting: "SamGPT online. I'm listening. How can I help you?",
     voiceSelection: "en-IN-NeerjaNeural",
     speechSpeed: "+0%",
     speechPitch: "+0Hz",

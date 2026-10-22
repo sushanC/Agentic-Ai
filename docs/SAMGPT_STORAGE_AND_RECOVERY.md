@@ -1,5 +1,7 @@
 # Storage, recovery and data integrity
 
+Phase 6 deployment and migration decisions and the Phase 7 single-owner OIDC boundary are documented in [remote deployment and shared-state architecture](SAMGPT_REMOTE_DEPLOYMENT.md). The supported current model remains one host with a local filesystem; the Phase 5 locks do not coordinate multiple hosts. OIDC mode requires an explicit owner manifest and central JSON-store ownership checks; existing data is never assigned automatically.
+
 Audit and implementation completed on 2026-10-18. Paths below are derived from the checked-out source. The application stores data under the process user's home directory in `~/.personal-agent/`, except for explicitly noted current-working-directory and upload paths. No user files or credential values were read during this audit.
 
 ## Persistent-store inventory

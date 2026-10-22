@@ -1,5 +1,20 @@
 import { spawn } from "child_process";
 import fs from "fs";
+import path from "path";
+
+const FFPLAY_CANDIDATES = Object.freeze(["/usr/bin/ffplay", "/usr/local/bin/ffplay"]);
+
+export function resolveFfplayPath(fileSystem = fs, configuredPath = process.env.SAMGPT_FFPLAY_PATH) {
+  if (configuredPath && !path.isAbsolute(configuredPath)) return null;
+  const candidates = configuredPath ? [configuredPath] : FFPLAY_CANDIDATES;
+  for (const candidate of candidates) {
+    try {
+      fileSystem.accessSync(candidate, fileSystem.constants.X_OK);
+      return candidate;
+    } catch {}
+  }
+  return null;
+}
 
 /**
  * VoiceQueue.js
@@ -8,7 +23,16 @@ import fs from "fs";
  * Prevents overlapping audio, supports pause/resume via OS signals, and handles cancellation.
  */
 export class VoiceQueue {
-  constructor() {
+  constructor({
+    spawnProcess = spawn,
+    removeFile = (file, callback) => fs.unlink(file, callback),
+    playerPath = resolveFfplayPath(),
+    playbackTimeoutMs = 45000
+  } = {}) {
+    this.spawnProcess = spawnProcess;
+    this.removeFile = removeFile;
+    this.playerPath = playerPath;
+    this.playbackTimeoutMs = playbackTimeoutMs;
     this.queue = [];
     this.currentProcess = null;
     this.currentFile = null;
@@ -21,6 +45,7 @@ export class VoiceQueue {
     this.onEmpty = null;
     this.onError = null;
     this.speakerSelection = null;
+    this.drainWaiters = [];
   }
 
   /**
@@ -33,6 +58,14 @@ export class VoiceQueue {
     if (!this.isPlaying && !this.isPaused) {
       this._playNext();
     }
+  }
+
+  enqueueBatch(filePaths) {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) return Promise.resolve();
+    this.queue.push(...filePaths);
+    const drained = new Promise(resolve => this.drainWaiters.push(resolve));
+    if (!this.isPlaying && !this.isPaused) this._playNext();
+    return drained;
   }
 
   /**
@@ -97,6 +130,7 @@ export class VoiceQueue {
 
     this.isPlaying = false;
     this.isPaused = false;
+    this._resolveDrainWaiters({ completed: false });
 
     if (this.onPlayFinish) {
       this.onPlayFinish();
@@ -125,6 +159,10 @@ export class VoiceQueue {
     this.speakerSelection = device;
   }
 
+  discard(filePath) {
+    if (filePath) this._deleteFile(filePath);
+  }
+
   /**
    * Play the next item in the queue.
    * @private
@@ -134,16 +172,21 @@ export class VoiceQueue {
       this.isPlaying = false;
       this.currentFile = null;
       console.log("[VoiceQueue] Queue is empty.");
+      this._resolveDrainWaiters({ completed: true });
       if (this.onEmpty) this.onEmpty();
       return;
     }
 
     this.isPlaying = true;
-    this.currentFile = this.queue.shift();
-    console.log(`[VoiceQueue] Playing: ${this.currentFile}`);
+    const filePath = this.queue.shift();
+    this.currentFile = filePath;
+    console.log("[VoiceQueue] Playing audio");
 
-    if (this.onPlayStart) {
-      this.onPlayStart(this.currentFile);
+    if (!this.playerPath) {
+      const error = new Error("ffplay was not found. Install it or set SAMGPT_FFPLAY_PATH.");
+      error.code = "FFPLAY_NOT_FOUND";
+      this._failPlayback(null, filePath, error);
+      return;
     }
 
     try {
@@ -153,34 +196,63 @@ export class VoiceQueue {
         env.PULSE_SINK = this.speakerSelection;
       }
 
-      this.currentProcess = spawn("ffplay", [
+      const player = this.spawnProcess(this.playerPath, [
         "-nodisp",
         "-autoexit",
         "-probesize", "32",
         "-analyzeduration", "0",
         "-loglevel", "quiet",
-        this.currentFile
-      ], { env });
+        filePath
+      ], { env, stdio: ["ignore", "ignore", "pipe"] });
+      this.currentProcess = player;
+      let settled = false;
+      let stderr = "";
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hangTimeout);
+        this._failPlayback(player, filePath, error);
+      };
+
+      player.stderr?.on("data", chunk => {
+        stderr = (stderr + chunk.toString()).slice(-2048);
+      });
+
+      player.once("spawn", () => {
+        if (this.currentProcess === player && this.isPlaying && this.onPlayStart) this.onPlayStart(filePath);
+      });
 
       // Playback hang watchdog: force terminate after 45 seconds of a single sentence chunk
       const hangTimeout = setTimeout(() => {
-        if (this.currentProcess) {
-          console.warn(`[VoiceQueue] Playback hang detected for chunk: ${this.currentFile}. Force terminating.`);
+        if (this.currentProcess === player) {
+          console.warn("[VoiceQueue] Playback hang detected. Force terminating.");
           try {
-            this.currentProcess.kill("SIGKILL");
+            player.kill("SIGKILL");
           } catch (e) {}
+          const error = new Error("ffplay playback timed out.");
+          error.code = "FFPLAY_TIMEOUT";
+          fail(error);
         }
-      }, 45000);
+      }, this.playbackTimeoutMs);
 
-      this.currentProcess.on("close", (code) => {
+      player.on("close", (code) => {
         clearTimeout(hangTimeout);
         console.log(`[VoiceQueue] Playback process closed with code ${code}`);
+        this._deleteFile(filePath);
+        if (settled) return;
+        settled = true;
+        if (this.currentProcess !== player) return;
         this.currentProcess = null;
+        this.currentFile = null;
 
-        // Delete current file after it finishes playing
-        if (this.currentFile) {
-          this._deleteFile(this.currentFile);
-          this.currentFile = null;
+        if (code !== 0 && this.isPlaying) {
+          const deviceFailure = /audio|device|pulse|pipewire|alsa/i.test(stderr);
+          const error = new Error(deviceFailure
+            ? "ffplay could not use the configured audio output device."
+            : `ffplay exited with code ${code ?? "unknown"}.`);
+          error.code = deviceFailure ? "AUDIO_OUTPUT_UNAVAILABLE" : "AUDIO_PLAYBACK_FAILED";
+          this._failPlayback(null, null, error, false);
+          return;
         }
 
         // Play next file if we were not paused or cancelled
@@ -189,22 +261,15 @@ export class VoiceQueue {
         }
       });
 
-      this.currentProcess.on("error", (err) => {
-        clearTimeout(hangTimeout);
-        console.error("[VoiceQueue] Playback process error:", err);
-        if (this.onError) this.onError(err);
-        this.currentProcess = null;
-        if (this.currentFile) {
-          this._deleteFile(this.currentFile);
-          this.currentFile = null;
-        }
-        this._playNext();
+      player.on("error", (err) => {
+        const error = new Error(`ffplay could not start (${err?.code || "PROCESS_ERROR"}).`);
+        error.code = "FFPLAY_SPAWN_FAILED";
+        fail(error);
       });
     } catch (err) {
-      console.error("[VoiceQueue] Error spawning ffplay:", err);
-      if (this.onError) this.onError(err);
-      this.isPlaying = false;
-      this._playNext();
+      const error = new Error(`ffplay could not start (${err?.code || "PROCESS_ERROR"}).`);
+      error.code = "FFPLAY_SPAWN_FAILED";
+      this._failPlayback(null, filePath, error);
     }
   }
 
@@ -214,12 +279,33 @@ export class VoiceQueue {
    * @private
    */
   _deleteFile(filePath) {
-    fs.unlink(filePath, (err) => {
+    this.removeFile(filePath, (err) => {
       if (err && err.code !== "ENOENT") {
         console.warn(`[VoiceQueue] Failed to delete temp file ${filePath}:`, err.message);
       } else {
         console.log(`[VoiceQueue] Deleted temp file: ${filePath}`);
       }
     });
+  }
+
+  _resolveDrainWaiters(result) {
+    for (const resolve of this.drainWaiters.splice(0)) resolve(result);
+  }
+
+  _failPlayback(player, filePath, error, deleteCurrent = true) {
+    if (player && this.currentProcess !== player) return;
+    if (filePath) this._deleteFile(filePath);
+    if (this.currentFile === filePath || !filePath) this.currentFile = null;
+    this.currentProcess = null;
+    this.isPlaying = false;
+    this.isPaused = false;
+    while (this.queue.length) this._deleteFile(this.queue.shift());
+    if (deleteCurrent && this.currentFile) {
+      this._deleteFile(this.currentFile);
+      this.currentFile = null;
+    }
+    console.error("[VoiceQueue] Audio playback failed", { code: error?.code || "PLAYBACK_ERROR" });
+    this._resolveDrainWaiters({ completed: false });
+    this.onError?.(error);
   }
 }

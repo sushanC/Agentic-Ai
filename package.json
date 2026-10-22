@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node tests/phase1/security-integrity.test.js && node tests/phase2/request-lifecycle.test.js && node tests/phase3/chat-route.integration.test.js && node tests/phase4/storage-recovery.test.js && node tests/phase5/restore-cross-process.test.js",
+    "test": "node tests/phase1/security-integrity.test.js && node tests/phase2/request-lifecycle.test.js && node tests/phase3/chat-route.integration.test.js && node tests/phase4/storage-recovery.test.js && node tests/phase5/restore-cross-process.test.js && node tests/phase7/remote-access.test.js && node tests/voice/voice-lifecycle.test.js && node tests/voice/tts-service.test.js",
     "start": "node server.js"
   },
   "author": "Sushan Achar",
@@ -19,6 +19,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "googleapis": "^173.0.0",
+    "jose": "^6.2.12",
     "multer": "^2.1.1",
     "node-record-lpcm16": "^1.0.1",
     "ollama": "^0.6.3",

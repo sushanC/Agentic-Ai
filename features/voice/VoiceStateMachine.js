@@ -1,70 +1,45 @@
-/**
- * VoiceStateMachine.js
- *
- * Manages the state transitions for the Jarvis voice assistant.
- * States: 'idle', 'listening', 'processing', 'speaking', 'error'.
- */
+/** Authoritative lifecycle for a single voice interaction. */
+export const VOICE_STATES = Object.freeze([
+  "idle", "starting", "greeting", "listening", "transcribing",
+  "thinking", "speaking", "interrupted", "error", "stopping"
+]);
+
+const ALLOWED = Object.freeze({
+  idle: ["starting"],
+  starting: ["greeting", "listening", "error", "stopping", "interrupted"],
+  greeting: ["starting", "listening", "error", "stopping", "interrupted"],
+  listening: ["transcribing", "interrupted", "error", "stopping"],
+  transcribing: ["thinking", "starting", "listening", "idle", "interrupted", "error", "stopping"],
+  thinking: ["speaking", "starting", "listening", "idle", "interrupted", "error", "stopping"],
+  speaking: ["starting", "listening", "idle", "interrupted", "error", "stopping"],
+  interrupted: ["listening", "idle", "starting", "stopping", "error"],
+  error: ["idle", "starting", "stopping"],
+  stopping: ["idle"]
+});
+
 export class VoiceStateMachine {
-  /**
-   * @param {function(string, string)} onStateChange - Callback (newState, oldState)
-   */
-  constructor(onStateChange) {
+  constructor(onStateChange = () => {}) {
     this._state = "idle";
-    this._onStateChange = onStateChange || (() => {});
+    this._onStateChange = onStateChange;
   }
 
-  /**
-   * Get the current state.
-   * @returns {string}
-   */
-  get state() {
-    return this._state;
-  }
+  get state() { return this._state; }
 
-  /**
-   * Transition to a new state if valid.
-   * Any state can transition to 'idle' or 'error' for recovery/reset.
-   * @param {string} newState
-   * @returns {boolean} - True if transition was successful
-   */
-  transitionTo(newState) {
-    const oldState = this._state;
-    if (oldState === newState) return false;
-
-    const validTransitions = {
-      idle: ["listening"],
-      listening: ["processing", "idle"],
-      processing: ["speaking", "error", "idle"],
-      speaking: ["listening", "processing", "idle"],
-      error: ["idle"]
-    };
-
-    const isAllowed =
-      newState === "idle" ||
-      newState === "error" ||
-      (validTransitions[oldState] && validTransitions[oldState].includes(newState));
-
-    if (!isAllowed) {
-      console.warn(`[VoiceStateMachine] Invalid state transition: ${oldState} -> ${newState}`);
-      return false;
+  transitionTo(next) {
+    if (!VOICE_STATES.includes(next) || next === this._state) return false;
+    if (!ALLOWED[this._state].includes(next)) return false;
+    const previous = this._state;
+    this._state = next;
+    try { this._onStateChange(next, previous); } catch (error) {
+      console.error("[VoiceStateMachine] state listener failed", { code: error?.code || "LISTENER_ERROR" });
     }
-
-    this._state = newState;
-    console.log(`[VoiceStateMachine] State changed: ${oldState.toUpperCase()} -> ${newState.toUpperCase()}`);
-
-    try {
-      this._onStateChange(newState, oldState);
-    } catch (err) {
-      console.error("[VoiceStateMachine] Error in state change listener:", err);
-    }
-
     return true;
   }
 
-  /**
-   * Reset the state machine to idle.
-   */
   reset() {
-    this.transitionTo("idle");
+    if (this._state !== "idle") {
+      this._state = "idle";
+      try { this._onStateChange("idle", "reset"); } catch {}
+    }
   }
 }
