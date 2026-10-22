@@ -45,7 +45,6 @@ export const VOICE_CONFIG = Object.freeze({
   // Timeout & Recovery Limits
   TIMEOUTS: Object.freeze({
     conversationModeTimeout: 30, // Timeout (seconds) for continuous conversation silence
-    errorRecoveryDelay: 3000,   // Delay (ms) before recovering state machine from error to idle
-    tempFileCleanupDelay: 80     // Delay (ms) before verifying and transmitting temp audio file
+    errorRecoveryDelay: 3000   // Delay (ms) before recovering state machine from error to idle
   })
 });

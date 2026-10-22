@@ -3,9 +3,22 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { randomUUID } from "crypto";
+import { finished } from "stream/promises";
 import { VOICE_CONFIG } from "./voiceConfig.js";
 import { VadDetector } from "./VadDetector.js";
 import { whisperDaemonManager } from "./WhisperDaemon.js";
+
+export function finishRecordingStream(stream) {
+  const completion = finished(stream);
+  stream.end();
+  return completion;
+}
+
+export function classifyCapturedAudio(fileSize, minimumBytes, voiceActive) {
+  if (fileSize <= minimumBytes) return "AUDIO_TOO_SHORT";
+  if (!voiceActive) return "NO_SPEECH_DETECTED";
+  return null;
+}
 
 /**
  * Initialize the Whisper Python daemon.
@@ -42,7 +55,12 @@ export function shutdownSTT() {
 export async function listen(options = {}) {
   // Ensure the Whisper daemon is initialized and ready
   const ready = await initSTT();
-  if (!ready) throw new Error("Speech recognition is unavailable. Check the configured Python environment and Whisper dependencies.");
+  if (!ready) {
+    throw Object.assign(
+      new Error("Speech recognition is unavailable."),
+      { code: "WHISPER_MODEL_UNAVAILABLE" },
+    );
+  }
 
   const {
     language = VOICE_CONFIG.STT.language,
@@ -61,7 +79,7 @@ export async function listen(options = {}) {
 
   return new Promise((resolve, reject) => {
     const tempFile = path.join(os.tmpdir(), `samgpt-audio-${randomUUID()}.wav`);
-    const fileStream = fs.createWriteStream(tempFile);
+    const fileStream = fs.createWriteStream(tempFile, { mode: 0o600 });
 
     const recOptions = {
       recorder: os.platform() === "linux" ? "arecord" : "sox",
@@ -75,7 +93,7 @@ export async function listen(options = {}) {
       recOptions.device = device;
     }
 
-    console.log(`[STT] Starting recording to ${tempFile} (Device: ${device}, BeamSize: ${beamSize})...`);
+    console.log(`[STT] Starting recording (Device: ${device}, BeamSize: ${beamSize})...`);
 
     let recording;
     try {
@@ -118,40 +136,45 @@ export async function listen(options = {}) {
         console.warn("[STT] Error stopping recorder process:", e.message);
       }
 
-      fileStream.end();
+      // Wait for the Writable's finish callback: a fixed sleep cannot guarantee
+      // that the final WAV bytes have reached disk before Whisper opens it.
+      finishRecordingStream(fileStream).then(async () => {
+        if (signal?.aborted) {
+          fs.unlink(tempFile, () => {});
+          resolve({ text: "", aborted: true });
+          return;
+        }
 
-      if (signal?.aborted) {
-        fs.unlink(tempFile, () => {});
-        resolve({ text: "", aborted: true });
-        return;
-      }
+        if (captureError) {
+          fs.unlink(tempFile, () => {});
+          resolve({ text: "", code: "AUDIO_CAPTURE_FAILED", error: "AUDIO_CAPTURE_FAILED" });
+          return;
+        }
 
-      if (captureError) {
-        fs.unlink(tempFile, () => {});
-        resolve({ text: "", error: "Audio capture failed." });
-        return;
-      }
-
-      setTimeout(async () => {
         if (!fs.existsSync(tempFile)) {
-          resolve({ text: "", error: "Audio file not created" });
+          resolve({ text: "", code: "AUDIO_CAPTURE_FAILED", error: "AUDIO_CAPTURE_FAILED" });
           return;
         }
 
         const stats = fs.statSync(tempFile);
         console.log(`[STT] Audio file saved: ${tempFile} (${stats.size} bytes)`);
 
-        if (stats.size <= VOICE_CONFIG.STT.minValidAudioBytes) {
+        const captureCode = classifyCapturedAudio(
+          stats.size,
+          VOICE_CONFIG.STT.minValidAudioBytes,
+          vad.voiceActive,
+        );
+        if (captureCode === "AUDIO_TOO_SHORT") {
           console.log("[STT VAD] Insufficient or empty audio recorded, skipping Whisper transcription.");
           fs.unlink(tempFile, () => {});
-          resolve({ text: "", confidence: 1.0, duration: 0.0 });
+          resolve({ text: "", code: "AUDIO_TOO_SHORT", error: "AUDIO_TOO_SHORT", duration: 0.0 });
           return;
         }
 
-        if (!vad.voiceActive) {
+        if (captureCode === "NO_SPEECH_DETECTED") {
           console.log("[STT VAD] No speech activity detected during session, skipping Whisper.");
           fs.unlink(tempFile, () => {});
-          resolve({ text: "", confidence: 1.0, duration: 0.0 });
+          resolve({ text: "", code: "NO_SPEECH_DETECTED", error: "NO_SPEECH_DETECTED", duration: vad.totalDuration });
           return;
         }
 
@@ -166,13 +189,25 @@ export async function listen(options = {}) {
           fs.unlink(tempFile, (err) => {
             if (err) console.warn("[STT] Temp file cleanup warning:", err.message);
           });
-          resolve(result);
+          if (result.error) {
+            const code = typeof result.code === "string" && /^[A-Z0-9_-]{1,64}$/.test(result.code)
+              ? result.code
+              : "TRANSCRIPTION_FAILED";
+            resolve({ ...result, code, error: code });
+          } else if (!result.text?.trim()) {
+            resolve({ ...result, code: "TRANSCRIPTION_EMPTY", error: "TRANSCRIPTION_EMPTY" });
+          } else {
+            resolve(result);
+          }
         } catch (err) {
           console.error("[STT] Whisper transcription failed:", err.message);
           fs.unlink(tempFile, () => {});
-          resolve({ text: "", error: err.message });
+          resolve({ text: "", code: "TRANSCRIPTION_FAILED", error: "TRANSCRIPTION_FAILED" });
         }
-      }, VOICE_CONFIG.TIMEOUTS.tempFileCleanupDelay);
+      }).catch(() => {
+        fs.unlink(tempFile, () => {});
+        resolve({ text: "", code: "AUDIO_CAPTURE_FAILED", error: "AUDIO_CAPTURE_FAILED" });
+      });
     };
 
     // Voice Activity Detection (VAD) audio stream handler

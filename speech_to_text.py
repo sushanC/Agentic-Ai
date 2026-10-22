@@ -35,7 +35,7 @@ def main():
             language = data.get("language", "en")
 
             if not audio_file or not os.path.exists(audio_file):
-                print(json.dumps({"error": f"Audio file not found: {audio_file}"}), flush=True)
+                print(json.dumps({"code": "AUDIO_FILE_UNAVAILABLE", "error": "AUDIO_FILE_UNAVAILABLE", "text": ""}), flush=True)
                 continue
 
             lang_param = None if language == "auto" or not language else language
@@ -83,9 +83,9 @@ def main():
                 "processing_duration": processing_duration
             }
             print(json.dumps(result), flush=True)
-        except Exception as e:
+        except Exception:
             # Output error as JSON, preventing daemon crash
-            print(json.dumps({"error": str(e), "text": ""}), flush=True)
+            print(json.dumps({"code": "TRANSCRIPTION_FAILED", "error": "TRANSCRIPTION_FAILED", "text": ""}), flush=True)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

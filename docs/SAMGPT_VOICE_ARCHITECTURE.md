@@ -1,6 +1,6 @@
 # samGPT Voice Architecture
 
-Audit date: 2026-10-22. This document describes the inspected working trees in `Agentic-Ai`, `AgenticAI_Frontend`, and `AgenticAI_Electron`. All facts below refer to current source unless marked **Proposed**. The repositories contain pre-existing uncommitted changes; this audit preserved them.
+Audit date: 2026-10-22. This document describes the inspected working trees in `Agentic-Ai`, `AgenticAI_Frontend`, and `AgenticAI_Electron`. All facts below refer to current source unless marked **Proposed**. The pre-existing uncommitted changes were preserved. This pass adds STT WAV/VAD handling, safe capture outcomes, focused tests, phrase/WER diagnostics, and actionable renderer errors.
 
 ## Verified component inventory
 
@@ -94,7 +94,7 @@ Invalid transitions are rejected with `false`; the state machine does not throw.
 
 ## STT, runtime, TTS, playback and microphone boundaries
 
-- **Microphone:** Node `node-record-lpcm16` starts Linux `arecord`; configured non-default microphone selection is passed as the recorder device. Audio remains in a temporary WAV before local Whisper inference. VAD is amplitude threshold and silence based; it is not a neural endpoint detector.
+- **Microphone:** Node `node-record-lpcm16` starts Linux `arecord`; configured non-default microphone selection is passed as the recorder device. Audio remains in a mode-0600 temporary WAV before local Whisper inference. VAD is amplitude threshold and silence based; it is not a neural endpoint detector. It now finds the WAV `data` chunk across split recorder buffers before measuring PCM.
 - **STT:** `WhisperDaemon` launches `venv/bin/python speech_to_text.py`, communicates with JSON lines, and retains one active request. The daemon has a 120-second startup and transcription timeout. Model choice, loading, and inference are in Python, outside React rendering.
 - **AI runtime:** voice is tagged with context `voice` and routed through `AgentRuntime`, which may route to existing model providers and capabilities/tools. Voice stores the user and assistant messages and calls existing memory and summary APIs. It does not directly call a model from React.
 - **TTS:** `ttsService.js` launches `venv/bin/python tts.py` unless `SAMGPT_PYTHON_PATH` is configured. It passes text and voice options as process arguments; Edge TTS sends that text to Microsoft's network speech service. The subprocess has a 120-second timeout, bounded stderr capture and a session abort handler.
@@ -118,9 +118,9 @@ The backend singleton owns the voice session and queue. `startPromise` and `list
 
 ## Errors, diagnostics and recovery
 
-TTS classifies missing Python/script/dependency, Edge HTTP/network/timeout, malformed MP3, and process errors with stable codes. Playback distinguishes missing player, spawn failure, timeout, nonzero exit and audio-device-like stderr. STT emits start/ready/capture/transcription errors and safe character counts, but microphone and recorder failures are not yet normalized consistently. The UI previously showed the generic greeting error even when TTS had identified an actionable code. The current audit fix preserves a validated error code through the state event and adds code-specific UI guidance. Raw exception messages and transcript/response text are not included in the voice state error field.
+TTS classifies missing Python/script/dependency, Edge HTTP/network/timeout, malformed MP3, and process errors with stable codes. Playback distinguishes missing player, spawn failure, timeout, nonzero exit and audio-device-like stderr. STT reports stable outcomes for capture failure, too-short audio, no detected speech, empty transcription, and transcription failure. The renderer displays a validated safe error code and actionable guidance; raw exceptions, transcripts and responses are not copied into error details. Voice IPC state errors do not contain transcript or response content. The transcript and response fields are sent only in their corresponding state events for display in the voice UI.
 
-Developer telemetry includes stage durations, character counts and state events. Avoid adding logs of prompt, transcript, response, API key, or raw subprocess stderr. STT writes a temporary WAV in the system temp directory and removes it on completion/cancel paths; permissions should be explicitly constrained to the current user as a follow-up. TTS uses a random temporary filename, validates MP3 framing and removes it after playback or failure.
+Developer telemetry includes stage durations, character counts and state events. Avoid adding logs of prompt, transcript, response, API key, or raw subprocess stderr. STT writes a temporary WAV in the system temp directory with mode 0600 and removes it on completion/cancel paths. It waits for the file stream to finish before opening it for transcription; the former fixed 80 ms delay was not a reliable flush guarantee. TTS uses a random temporary filename, validates MP3 framing and removes it after playback or failure.
 
 ## Privacy and security boundaries
 
@@ -133,29 +133,33 @@ Developer telemetry includes stage durations, character counts and state events.
 
 ## Current validation and limitations
 
+Phase 1 confirmed two capture defects in the implementation: VAD skipped a WAV header only when it arrived as one exact 44-byte first buffer, and transcription waited a fixed 80 ms rather than waiting for file output to flush. VAD now locates the RIFF `data` chunk across split buffers, and Whisper is called only after the write stream finishes. Temporary WAV creation now requests mode 0600. Empty capture outcomes no longer report a synthetic confidence of 1.0, and the lifecycle reports stable, actionable error codes. A synthetic phrase gave the same recognition output with and without the generic initial prompt, so this pass did not change the model, beam, language, compute type or prompt.
+
 Verified on 2026-10-22 in this environment:
 
-- Backend interpreter: Python 3.12.3 at `Agentic-Ai/venv/bin/python`; `edge-tts` is 7.3.1.
-- Real Edge TTS synthesis using the backend's `tts.py` completed with exit code 0 and produced a 15,696-byte MP3. This verifies the current handshake and file generation, not playback.
-- `/usr/bin/ffplay` and `/usr/bin/ffprobe` exist. No ALSA cards are visible (`arecord -l` and `aplay -l` report no soundcards); `/dev/snd` is absent. Audible playback and microphone capture cannot be verified here.
-- A direct `ffplay -nodisp -autoexit -loglevel error` run on the generated MP3 exited with code 0 in this device-less environment. This is an observed example of why exit code 0 alone must not be reported as successful audible playback.
-- `faster-whisper` 1.2.1 is installed in the backend venv and is the implementation imported by `speech_to_text.py`. The `small` CPU/int8 model startup and actual transcription were not run during this audit.
-- Focused backend voice lifecycle and TTS tests pass. These tests mock child processes and audio output; they do not verify physical devices.
-- Frontend production build passes, with a bundle-size warning. Frontend lint currently fails with 63 errors and 2 warnings across the tree, including pre-existing screens/hooks; voice-specific lint status is not isolated yet.
-- The full backend `npm test` run is blocked in this sandbox by tests that bind `127.0.0.1` (`listen EPERM`). Focused voice tests pass. Re-run the full suite in a local environment that permits loopback sockets.
+- Backend interpreter: Python 3.12.3 at `Agentic-Ai/venv/bin/python`; `edge-tts` 7.3.1 and `faster-whisper` 1.2.1 are installed. `ffplay` is 6.1.1; PipeWire is 1.0.5.
+- The reproducible `scripts/verifyVoiceDevices.sh` run generated a valid 19,296-byte MP3, duration 3.216 s. Measured Edge TTS generation was 2.090 s in that run (2.1–2.2 s in repeated runs).
+- `ffplay` completed in 3.316 s with exit code 0. A concurrent PipeWire graph inspection saw the active `ffplay` node routed to the default `Boult Audio Airbass` sink at volume 0.37. This verifies an audio stream reached the active output sink, but nobody in this environment confirmed hearing it.
+- `arecord -l` reports no ALSA hardware cards, but ALSA `default` routes through PipeWire. PipeWire enumerates a Built-in Audio Analog Stereo source, built-in analog sink, and Boult Audio Airbass sink. A 5-second default capture exited 0 in 5.186 s and had RMS 9495.2. No controlled spoken phrase was supplied during this run, so the capture is not verified as intelligible microphone input or as a permission test.
+- `faster-whisper` loaded the cached `small` CPU/int8 model in 2.17 s during the procedure. The default capture transcribed to empty text in 0.09 s. For a known synthetic Edge TTS phrase, transcription took 1.34 s and returned `Samjee PT Voice Verification` instead of the expected `SamGPT voice verification`. Repeating the same sample with and without the current generic initial prompt returned the same text (1.537 s with prompt, 1.365 s without on that comparison); the prompt/model settings were left unchanged. Normalizing words and punctuation gives 2 edits over 3 reference words (66.7% WER) for this synthetic phrase. This is a single synthetic spot check, not a microphone benchmark.
+- The diagnostic script now presents three fixed phrases, captures five seconds to a private temporary WAV, applies the current `small` CPU/int8, English, beam-size-5 Faster Whisper settings, and prints WER while suppressing recognized text. `SAMGPT_VOICE_DIAGNOSTICS=1` opts in to printing the transcript locally. The script removes its private temporary directory on exit. No human spoke a controlled phrase during this environment's run, so no real-microphone WER is available.
+- The checked-in voice lifecycle tests verify greeting-completion-before-capture, duplicate start coalescing, greeting retry, stop during TTS/playback/capture/AI, and suppression of stale results. New audio tests cover split RIFF headers, PCM VAD and waiting for WAV flush completion. These tests use fakes; they do not prove the physical Electron path.
+- Backend `npm test` passes, including the added audio test. Frontend production build passes with the existing >500 kB bundle warning. Targeted ESLint on `VoiceExperience.jsx`, `VoiceControls.jsx`, and `VoiceStatus.jsx` passes. Full frontend lint previously reported 63 errors and 2 warnings in the broader tree.
+- **Not verified:** an actual human heard the greeting; a controlled phrase was captured and transcribed; the full Electron Start-to-AI-to-spoken-response loop; target-device AI inference latency. Those require a person speaking/listening in the desktop session and an available AI provider.
 
-No verified latency or resource baseline is available yet. Existing metrics collect recording, AI, TTS, playback startup and playback durations, but current test values use fakes and are not target-device measurements. Add model-load, STT inference, audio-device initialization and monotonic stage timestamps before setting performance budgets.
+Measured process timings use `time.perf_counter()` and describe these individual test runs only. Playback timing is the `ffplay` process lifetime, not perceived audio latency. Microphone capture timing includes the five-second recording, so it does not isolate recorder startup. The available timing observations are greeting generation 2.090 s, greeting playback process 3.316 s, five-second mic capture process 5.186 s, Whisper cold load 2.17 s, and empty-capture Whisper inference 0.09 s. Current response synthesis, actual mic startup, AI inference, and response playback latency were not measured because an attended full Electron turn was not run. There is no verified end-to-end latency or resource baseline yet.
 
 ## Limitations and technical debt
 
-1. No physical audio device was available for this audit; playback process completion is not proof of audible sound.
-2. `speech_to_text.py` dependency/model health and actual microphone permission remain unverified; Whisper is not installed as `openai-whisper` in the inspected venv.
-3. The `VoiceManager` path has stronger lifecycle handling than the legacy `/voice` HTTP service, which directly calls `askAI`/`speak`; clarify or retire the legacy path before expanding it.
-4. State changes carry an error code but IPC commands do not acknowledge success or failure directly.
-5. Continuous mode retries listening after no speech, while conversation timeout is reset on capture start; validate interaction semantics with target users and devices.
-6. `VoiceQueue` infers audio device failures from a bounded stderr text pattern and only recognizes common fixed `ffplay` locations unless configured.
-7. The Electron window currently disables Chromium sandboxing and needs a dedicated security fix.
-8. Microphone device enumeration, permissions and capture are Linux/ALSA oriented; PipeWire/PulseAudio device identities need explicit validation.
+1. PipeWire exposes audio nodes and the playback stream reaches an active sink, but human audible playback has not been confirmed.
+2. The default capture path produces nonzero audio, but no controlled utterance was supplied; microphone intelligibility, selected-device behavior and actual permission handling remain unverified.
+3. The cached Faster Whisper model loads, but the synthetic sample was misrecognized and no target-user speech quality test was performed.
+4. The `VoiceManager` path has stronger lifecycle handling than the legacy `/voice` HTTP service, which directly calls `askAI`/`speak`; clarify or retire the legacy path before expanding it.
+5. State changes carry an error code but IPC commands do not acknowledge success or failure directly.
+6. Continuous mode retries listening after no speech, while conversation timeout is reset on capture start; validate interaction semantics with target users and devices.
+7. `VoiceQueue` infers audio device failures from a bounded stderr text pattern and only recognizes common fixed `ffplay` locations unless configured.
+8. Electron BrowserWindow definitions currently set `sandbox: false`; this pre-existing security issue was not changed during voice verification.
+9. Device enumeration and capture use Linux/ALSA names while PipeWire supplies the active source and sink; validate selected-device identifiers end to end.
 
 ## Prioritized upgrade roadmap
 
@@ -193,15 +197,43 @@ No verified latency or resource baseline is available yet. Existing metrics coll
 
 ## Local verification commands
 
-Run from the backend repository:
+Run from the backend repository. The script uses a private temporary directory and removes its generated MP3 and recorded WAV on exit. It asks which fixed test phrase you will speak during the five-second capture, compares the transcript with that reference, and prints WER without transcript text. Set `SAMGPT_VOICE_DIAGNOSTICS=1` only when you explicitly want the local transcript printed to the terminal.
 
 ```bash
-./venv/bin/python --version
-./venv/bin/python -m pip show edge-tts
-./venv/bin/python tts.py --text 'SamGPT voice check.' --voice en-IN-NeerjaNeural --rate=+0% --pitch=+0Hz --volume=+0% --output /tmp/samgpt-voice-check.mp3
-ffprobe -v error -show_entries format=format_name -of default=noprint_wrappers=1 /tmp/samgpt-voice-check.mp3
-node tests/voice/voice-lifecycle.test.js
-node tests/voice/tts-service.test.js
+cd "/home/sushan_acharya/Documents/Personal Agent/Agentic-Ai"
+./scripts/verifyVoiceDevices.sh
 ```
 
-Then start the Electron app in the target desktop session, press Start, confirm the greeting is heard, confirm the visible state changes to Listening only after it finishes, speak one phrase, and verify the displayed transcription and response. Repeat Stop while greeting, listening, thinking and speaking. Record OS, input/output device names, Python path/version and observed result without recording transcripts or private response text in diagnostic logs.
+If the default input is not the intended microphone, set its ALSA/PipeWire name for the script:
+
+```bash
+arecord -L
+SAMGPT_ALSA_INPUT='pipewire' ./scripts/verifyVoiceDevices.sh
+```
+
+On Zorin OS, first check the active PipeWire devices and the recorder's available inputs; use the selected ALSA/PipeWire name in `SAMGPT_ALSA_INPUT` if `default` is not the microphone you intend to test:
+
+```bash
+wpctl status
+arecord -l
+arecord -L
+SAMGPT_ALSA_INPUT='default' ./scripts/verifyVoiceDevices.sh
+```
+
+Then verify the full Electron path from the desktop session. Build the renderer before Electron because `windowManager.js` loads the frontend `dist` directory:
+
+```bash
+cd "/home/sushan_acharya/Documents/Personal Agent/AgenticAI_Frontend" && npm run build
+cd "/home/sushan_acharya/Documents/Personal Agent/AgenticAI_Electron" && npm start
+```
+
+In the app, press Start, wait for the greeting to finish, then speak one of the fixed phrases shown by the script. Confirm the visible Listening state begins only after greeting playback completes, the displayed transcript is correct, the existing SamGPT AI runtime returns an answer, and its spoken response reaches the intended output. Repeat Stop during greeting, listening, thinking and speaking, then retry after one recoverable error. Record only stage timings, error codes, WER and whether each stage succeeded; keep transcript and response contents out of diagnostic notes. The current execution environment has no ALSA hardware cards and no attended user to speak or confirm audibility, so this manual Electron verification is still a required target-device step.
+
+## Separate Jarvis-style implementation plan — not implemented
+
+The following work starts only after the physical Start-to-response path above is verified.
+
+1. **Voice activity and endpoint detection:** measure actual input levels and current silence behavior first; tune VAD against quiet, noisy, short and long speech. Add device-specific tests before replacing the amplitude detector.
+2. **Barge-in:** define an explicit interrupt event and operation IDs, stop active `ffplay`, cancel TTS/provider work where supported, and ignore late results. Add echo handling so speaker output does not immediately retrigger the microphone. Verify repeated interruptions on target hardware.
+3. **Continuous conversation:** make the mode explicit opt-in, then define turn endpoint, post-response listening, silence timeout, output echo suppression, Stop behavior and recovery. Keep a persistent visible listening indicator and Stop control.
+4. **Responsive voice visualization:** keep lifecycle state authoritative; use measured input amplitude only when it is actually available, otherwise label the orb/waveform as state-driven. Respect reduced-motion settings and verify layout at desktop and narrow widths.

@@ -35,6 +35,8 @@ export class VadDetector {
     this.ambientNoiseSum = 0;
     this.ambientNoiseChunks = 0;
     this.ambientLocked = false;
+    this.wavHeaderBuffer = Buffer.alloc(0);
+    this.wavDataStarted = false;
   }
 
   /**
@@ -48,16 +50,50 @@ export class VadDetector {
       return { isHeader: false, isSpeech: false, speechDetected: false, endOfSpeech: false, noSpeechTimeout: false };
     }
 
-    // 1. Detect and skip 44-byte RIFF WAV header on initial chunk
-    if (
-      this.totalBytesStreamed === 0 &&
-      chunk.length === VOICE_CONFIG.VAD.wavHeaderLength &&
-      chunk.toString("utf-8", 0, 4) === VOICE_CONFIG.VAD.wavHeaderTag
-    ) {
-      this.totalBytesStreamed += chunk.length;
-      return { isHeader: true, isSpeech: false, speechDetected: false, endOfSpeech: false, noSpeechTimeout: false };
-    }
     this.totalBytesStreamed += chunk.length;
+
+    // Recorder streams can split RIFF headers across arbitrary chunks. Buffer
+    // until the WAV data chunk is found so header bytes never look like speech.
+    let pcmChunk = chunk;
+    if (!this.wavDataStarted) {
+      this.wavHeaderBuffer = Buffer.concat([this.wavHeaderBuffer, chunk]);
+      const buffered = this.wavHeaderBuffer;
+      if (buffered.length < 4) return this._headerResult();
+      if (buffered.toString("ascii", 0, 4) !== VOICE_CONFIG.VAD.wavHeaderTag) {
+        this.wavDataStarted = true;
+        pcmChunk = buffered;
+        this.wavHeaderBuffer = Buffer.alloc(0);
+      } else {
+        if (buffered.length < 12) return this._headerResult();
+        let offset = 12;
+        let dataOffset = -1;
+        while (offset + 8 <= buffered.length) {
+          const chunkId = buffered.toString("ascii", offset, offset + 4);
+          const chunkSize = buffered.readUInt32LE(offset + 4);
+          if (chunkId === "data") {
+            dataOffset = offset + 8;
+            break;
+          }
+          const nextOffset = offset + 8 + chunkSize + (chunkSize % 2);
+          if (nextOffset > buffered.length) break;
+          offset = nextOffset;
+        }
+        if (dataOffset < 0) return this._headerResult();
+        this.wavDataStarted = true;
+        pcmChunk = buffered.subarray(dataOffset);
+        this.wavHeaderBuffer = Buffer.alloc(0);
+        if (pcmChunk.length === 0) return this._headerResult();
+      }
+    }
+
+    return this._processPcm(pcmChunk);
+  }
+
+  _headerResult() {
+    return { isHeader: true, isSpeech: false, speechDetected: false, endOfSpeech: false, noSpeechTimeout: false };
+  }
+
+  _processPcm(chunk) {
 
     // 2. Compute 16-bit LE PCM RMS energy
     let sumSquares = 0;

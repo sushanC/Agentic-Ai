@@ -86,7 +86,7 @@ function makeManager({ listenImpl, routeRequestImpl, generateTTSImpl, queueImpl 
     emitConversationStarted() {},
     emitConversationEnded() {},
     emitListeningStarted: () => effects.push("capture"),
-    emitSpeechRecognized: () => effects.push("transcribed"),
+    emitSpeechRecognized: text => effects.push(`transcript:${text}`),
     emitSpeechRecognitionFailed() {},
     emitAIStarted: () => effects.push("ai"),
     emitAIFinished() {},
@@ -216,6 +216,7 @@ function makeManager({ listenImpl, routeRequestImpl, generateTTSImpl, queueImpl 
   assert.equal(effects.filter(value => value === "greeting-played").length, 1);
   assert.ok(effects.indexOf("greeting-played") < effects.indexOf("capture"));
   assert.ok(effects.indexOf("capture") < effects.indexOf("routed:hello SamGPT"));
+  assert.ok(effects.includes("transcript:hello SamGPT"), "the displayed transcript is the exact text routed to the AI runtime");
   assert.ok(states.includes("greeting"));
   assert.ok(states.includes("listening"));
   assert.ok(states.includes("transcribing"));
@@ -248,14 +249,26 @@ function makeManager({ listenImpl, routeRequestImpl, generateTTSImpl, queueImpl 
   assert.equal(effects.some(value => String(value).startsWith("routed:")), false);
 }
 
-// Empty transcripts never call the AI pipeline.
+// Empty transcripts never call the AI pipeline and expose a safe recovery code.
 {
   const { manager, effects } = makeManager({ listenImpl: async ({ onCaptureStarted }) => {
     onCaptureStarted();
-    return { text: "   " };
+    return { text: "   ", code: "NO_SPEECH_DETECTED", error: "NO_SPEECH_DETECTED" };
   } });
   await manager.startVoiceMode();
   assert.equal(effects.some(value => String(value).startsWith("routed:")), false);
+  assert.ok(effects.includes("error:NO_SPEECH_DETECTED"));
+}
+
+// Whisper readiness failures retain a stable actionable code, not the raw exception text.
+{
+  const privateDetail = "local model path contains sensitive data";
+  const { manager, effects } = makeManager({ listenImpl: async () => {
+    throw Object.assign(new Error(privateDetail), { code: "WHISPER_MODEL_UNAVAILABLE" });
+  } });
+  await manager.startVoiceMode();
+  assert.ok(effects.includes("error:WHISPER_MODEL_UNAVAILABLE"));
+  assert.ok(!effects.some(value => String(value).includes(privateDetail)));
 }
 
 console.log("Voice lifecycle tests passed.");

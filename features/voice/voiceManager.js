@@ -277,10 +277,13 @@ export class VoiceManager {
 
       this._clearConversationTimer();
 
-      if (result.error) {
-        console.error("[VoiceManager] Speech recognition failed", { code: "TRANSCRIPTION_FAILED" });
-        this.events.emitSpeechRecognitionFailed(result.error);
-        this._fail(new Error(result.error), "TRANSCRIPTION_FAILED");
+      const resultCode = typeof result.code === "string" && /^[A-Z0-9_-]{1,64}$/.test(result.code)
+        ? result.code
+        : "TRANSCRIPTION_FAILED";
+      if (result.error && resultCode !== "NO_SPEECH_DETECTED") {
+        console.error("[VoiceManager] Speech recognition failed", { code: resultCode });
+        this.events.emitSpeechRecognitionFailed(resultCode);
+        this._fail(Object.assign(new Error(resultCode), { code: resultCode }), resultCode);
         return;
       }
 
@@ -291,14 +294,14 @@ export class VoiceManager {
 
       if (!text) {
         console.log("[VoiceManager] No speech detected.");
-        this.events.emitSpeechRecognitionFailed("No speech detected");
+        this.events.emitSpeechRecognitionFailed(resultCode === "TRANSCRIPTION_FAILED" ? "NO_SPEECH_DETECTED" : resultCode);
 
         if (this.isActive && this.settings?.conversationMode) {
           console.log("[VoiceManager] Continuous conversation active. Retrying listening...");
           await this.startListening();
         } else {
-          this.isActive = false;
-          this.stateMachine.transitionTo("idle");
+          const code = resultCode === "TRANSCRIPTION_FAILED" ? "NO_SPEECH_DETECTED" : resultCode;
+          this._fail(Object.assign(new Error(code), { code }), code);
         }
         return;
       }
