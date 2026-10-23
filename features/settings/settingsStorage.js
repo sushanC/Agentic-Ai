@@ -1,5 +1,6 @@
 import { getStoragePath } from "../../storage/storagePath.js";
 import { createJsonFileStore } from "../../storage/jsonFile.js";
+import { VOICE_CONFIG } from "../voice/voiceConfig.js";
 
 const settingsFile = createJsonFileStore(getStoragePath("settings.json"), {
   fallbackValue: {},
@@ -35,10 +36,15 @@ const DEFAULT_SETTINGS = {
   language: "en",
   autoListenAfterResponse: false,
   conversationTimeout: 30,
-  silenceTimeout: 1.2,
-  noiseTolerance: 300,
-  maxRecordingTime: 15,
-  noSpeechTimeout: 5
+  silenceTimeout: VOICE_CONFIG.STT.silenceTimeout,
+  noiseTolerance: VOICE_CONFIG.STT.noiseTolerance,
+  maxRecordingTime: VOICE_CONFIG.STT.maxRecordingTime,
+  noSpeechTimeout: VOICE_CONFIG.STT.noSpeechTimeout,
+  noiseMultiplier: VOICE_CONFIG.STT.noiseMultiplier,
+  continuationThresholdRatio: VOICE_CONFIG.STT.continuationThresholdRatio,
+  preRollMs: VOICE_CONFIG.STT.preRollMs,
+  minimumSpeechMs: VOICE_CONFIG.STT.minimumSpeechMs,
+  vadFallbackCaptureMs: VOICE_CONFIG.STT.vadFallbackCaptureMs,
 };
 
 export async function loadSettings() {
